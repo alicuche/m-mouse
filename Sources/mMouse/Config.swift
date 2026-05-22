@@ -12,8 +12,8 @@ struct ActivationComboConfig: Codable, Equatable {
 
     static let `default` = ActivationComboConfig(
         modifier: "command",
-        key: "j",
-        repeatCount: 2,
+        key: ";",
+        repeatCount: 1,
         windowMs: 500
     )
 }

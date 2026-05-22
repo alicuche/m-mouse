@@ -4,8 +4,8 @@ Keyboard-driven cursor control for macOS. Goal: drop the physical mouse as much 
 
 ## Features
 
-- **Activation sequence**: press `Cmd + J + J` (J twice within 500ms) to toggle mMouse mode
-- **Movement**: `h` `j` `k` `l` (vim style) — left / down / up / right
+- **Activation sequence**: press `Cmd + ;` to toggle mMouse mode (single press by default; configurable)
+- **Movement**: arrow keys (configurable — vim-style `h` `j` `k` `l` also works if you set them)
 - **Click** *(hardcoded, not configurable)*:
   - `Enter` → left click
   - `Enter × 2` (twice within 400ms) → double click
@@ -52,19 +52,19 @@ First launch:
 
 | Action | Keys |
 |---|---|
-| **Enable mMouse** | `Cmd + J + J` |
-| **Disable mMouse** (manual) | `Cmd + J + J` or `Esc` |
-| Up | `k` |
-| Down | `j` |
-| Left | `h` |
-| Right | `l` |
+| **Enable mMouse** | `Cmd + ;` |
+| **Disable mMouse** (manual) | `Cmd + ;` or `Esc` |
+| Up | `↑` |
+| Down | `↓` |
+| Left | `←` |
+| Right | `→` |
 | Left click | `Enter` (mode stays active — keep interacting) |
 | Double click | `Enter × 2` (within 400ms) |
 | Right click | `Shift + Enter` |
-| Scroll up | `Shift + k` (hold for continuous scroll) |
-| Scroll down | `Shift + j` |
-| Scroll left | `Shift + h` |
-| Scroll right | `Shift + l` |
+| Scroll up | `Shift + ↑` (hold for continuous scroll) |
+| Scroll down | `Shift + ↓` |
+| Scroll left | `Shift + ←` |
+| Scroll right | `Shift + →` |
 | **Drag start / end (block selection)** | `v` (vim visual mode) |
 | End drag (alt) | `Enter` |
 | **Panic exit** (escape hatch when stuck) | `Esc` (auto-commits an in-progress drag) |
@@ -83,7 +83,7 @@ Menu bar:
 
 To **prevent conflicts** with other apps' shortcuts. Example: if you accidentally press `w` while active and we didn't lock keys, Cmd+W (if Cmd happens to be held) would close a tab. Lockdown guarantees active mode is **pure mouse mode** — nothing else leaks through.
 
-Want to type → deactivate first (`Cmd+J+J`).
+Want to type → deactivate first (`Cmd+;`).
 
 ## Config
 
@@ -93,17 +93,17 @@ File: `~/.mMouse.json` (created on first launch).
 {
   "activationCombo": {
     "modifier": "command",
-    "key": "j",
-    "repeatCount": 2,
+    "key": ";",
+    "repeatCount": 1,
     "windowMs": 500
   },
   "keys": {
-    "up": "k",
-    "down": "j",
-    "left": "h",
-    "right": "l"
+    "up": "up",
+    "down": "down",
+    "left": "left",
+    "right": "right"
   },
-  "speed": 5
+  "speed": 3
 }
 ```
 
@@ -184,8 +184,8 @@ Edit the file → save → mMouse reloads automatically, no restart needed.
 
 ## Trade-offs to be aware of
 
-- The first `Cmd+J` press in the sequence is **always suppressed**. If a second J doesn't follow within 500ms, that first press is dropped (it never reaches the app underneath).
-- While active: **every key** is locked except h/j/k/l/Shift+(h/j/k/l)/Enter/Shift+Enter/`v`/activation. Cmd+Tab, Cmd+Q, typing — all consumed.
+- For multi-tap combos (`repeatCount > 1`), the first press is **always suppressed**. If the follow-up presses don't arrive within `windowMs`, that first press is dropped (it never reaches the app underneath). Single-press combos (`repeatCount: 1`, the default) don't have this trade-off.
+- While active: **every key** is locked except the movement keys / Shift+movement / Enter / Shift+Enter / `v` / activation. Cmd+Tab, Cmd+Q, typing — all consumed.
 - Click does not auto-exit the mode — press the activation combo again or `Esc` to leave.
 
 ## Troubleshooting
@@ -217,7 +217,7 @@ While typing a sudo password in Terminal, macOS auto-disables event taps. mMouse
 mMouse listens for `NSWorkspace.didWakeNotification` and recreates the tap. If it still doesn't work → menu bar → **Quit** → reopen.
 
 ### Stuck in active mode (activated but can't type)
-Press `Cmd+J+J` to deactivate. Or click the menu bar `🟢 mM` → **Deactivate** (the physical mouse still works either way).
+Press `Cmd+;` (or whatever activation combo you set) to deactivate. Or click the menu bar `🟢 mM` → **Deactivate** (the physical mouse still works either way).
 
 ### After granting permission, the alert still appears
 The app relaunches itself once the permission is detected. If it still loops:
