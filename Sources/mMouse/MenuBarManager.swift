@@ -64,11 +64,12 @@ final class MenuBarManager: NSObject {
         rebuildMenu(active: active)
     }
 
-    /// Tint the template image green while active, default color otherwise.
-    /// AppKit handles a template image's color via `contentTintColor` on the
-    /// hosting view (the status item button itself).
+    /// Tint the template image red while active, default color otherwise.
+    /// Matches the cursor badge color so both UI cues read "active mode" the
+    /// same way. AppKit handles a template image's color via `contentTintColor`
+    /// on the hosting view (the status item button itself).
     private func applyActiveTint(active: Bool, button: NSStatusBarButton) {
-        button.contentTintColor = active ? .systemGreen : nil
+        button.contentTintColor = active ? .systemRed : nil
     }
 
     private func rebuildMenu(active: Bool) {
