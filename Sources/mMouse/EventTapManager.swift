@@ -72,19 +72,59 @@ final class EventTapManager: @unchecked Sendable {
     }
 
     private let mouseController: MouseController
+    private let badge: CursorBadge
 
-    init(config: AppConfig, mouseController: MouseController) {
+    init(config: AppConfig, mouseController: MouseController, badge: CursorBadge) {
         self.config = config
         self.mouseController = mouseController
+        self.badge = badge
         rebuildKeyTables()
     }
 
     deinit {
         teardownTap()
         healthTimer?.cancel()
+        badgeFollowTimer?.cancel()
         if let obs = wakeObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(obs)
         }
+    }
+
+    // MARK: - Badge follow timer
+    //
+    // 60Hz polling timer reads the current cursor position and updates the
+    // badge to follow it. Runs ONLY while active mode is on. Polling beats
+    // subscribing to mouseMoved events because it also catches our own warps
+    // (which generate mouseMoved but might race with the badge update), and
+    // because adding mouseMoved to the tap mask would invite consume bugs.
+
+    private var badgeFollowTimer: DispatchSourceTimer?
+
+    private func startBadgeFollowTimer() {
+        badgeFollowTimer?.cancel()
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now(), repeating: 1.0 / 60.0)
+        timer.setEventHandler { [weak self] in
+            guard let self = self else { return }
+            let pos = self.currentCursorPosition()
+            MainActor.assumeIsolated { self.badge.move(to: pos) }
+        }
+        timer.resume()
+        badgeFollowTimer = timer
+    }
+
+    private func stopBadgeFollowTimer() {
+        badgeFollowTimer?.cancel()
+        badgeFollowTimer = nil
+    }
+
+    /// Read current cursor position. Mirrors MouseController.realCursorPosition
+    /// but kept local so EventTapManager doesn't depend on a private API.
+    private func currentCursorPosition() -> CGPoint {
+        if let p = CGEvent(source: nil)?.location { return p }
+        let ns = NSEvent.mouseLocation
+        let primaryHeight = CGDisplayBounds(CGMainDisplayID()).height
+        return CGPoint(x: ns.x, y: primaryHeight - ns.y)
     }
 
     // MARK: - Tap lifecycle
@@ -346,7 +386,13 @@ final class EventTapManager: @unchecked Sendable {
 
     private func toggleActivation() {
         isActive.toggle()
-        if !isActive {
+        if isActive {
+            // Show the small follow-badge anchored to the current cursor pos,
+            // then keep it in sync with cursor moves via the 60Hz timer.
+            let pos = currentCursorPosition()
+            MainActor.assumeIsolated { badge.show(at: pos) }
+            startBadgeFollowTimer()
+        } else {
             // If still dragging when deactivating, commit the mouseUp first
             // so apps don't get stuck with a pending button-down event.
             if mouseController.isDragging {
@@ -355,6 +401,8 @@ final class EventTapManager: @unchecked Sendable {
             mouseController.releaseAll()
             heldMovement.removeAll()
             mouseController.setBoost(1.0)
+            stopBadgeFollowTimer()
+            MainActor.assumeIsolated { badge.hide() }
         }
         enterClickCount = 0
         enterClickResetWork?.cancel()
@@ -369,11 +417,13 @@ final class EventTapManager: @unchecked Sendable {
     private func enterDragMode() {
         guard !mouseController.isDragging else { return }
         mouseController.startDrag()
+        MainActor.assumeIsolated { badge.flashAction() }
     }
 
     private func exitDragMode() {
         guard mouseController.isDragging else { return }
         mouseController.endDrag()
+        MainActor.assumeIsolated { badge.flashAction() }
     }
 
     /// Safety net for code paths that destroy or rebuild the tap (sleep/wake,
@@ -422,10 +472,12 @@ final class EventTapManager: @unchecked Sendable {
         // placement, etc.) is intentional and matches OS behavior.
         let count = min(enterClickCount, 2)
         mouseController.click(count: count)
+        MainActor.assumeIsolated { badge.flashAction() }
     }
 
     private func handleRightClick() {
         mouseController.rightClick()
+        MainActor.assumeIsolated { badge.flashAction() }
     }
 
     // MARK: - Core callback

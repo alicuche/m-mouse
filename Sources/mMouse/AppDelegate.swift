@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var mouseController: MouseController!
     private var eventTap: EventTapManager!
     private var menuBar: MenuBarManager!
+    private var badge: CursorBadge!
     private let configManager = ConfigManager.shared
 
     private var permissionPollTimer: Timer?
@@ -47,10 +48,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
 
         mouseController = MouseController()
+        badge = CursorBadge()
         // EventTapManager.init → rebuildKeyTables() sets speedLevel from config;
         // no need to set it here.
 
-        eventTap = EventTapManager(config: configManager.config, mouseController: mouseController)
+        eventTap = EventTapManager(config: configManager.config, mouseController: mouseController, badge: badge)
         menuBar = MenuBarManager(eventTap: eventTap, config: configManager)
 
         configManager.onReload = { [weak self] cfg in
