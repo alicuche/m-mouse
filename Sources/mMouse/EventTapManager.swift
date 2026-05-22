@@ -48,6 +48,11 @@ final class EventTapManager: @unchecked Sendable {
     /// Typed `@MainActor` so observers can update UI without async hops.
     var onActivationChange: (@MainActor (Bool) -> Void)?
 
+    /// Fired right after a click / right-click / drag-start / drag-end
+    /// commits. Used by UI indicators (menu bar icon, badge) to flash a
+    /// confirmation. Always invoked on the main thread.
+    var onActionFire: (@MainActor () -> Void)?
+
     var config: AppConfig {
         didSet {
             // CRITICAL: if active mode is running with keys held, the OLD
@@ -417,13 +422,23 @@ final class EventTapManager: @unchecked Sendable {
     private func enterDragMode() {
         guard !mouseController.isDragging else { return }
         mouseController.startDrag()
-        MainActor.assumeIsolated { badge.flashAction() }
+        fireActionIndicators()
     }
 
     private func exitDragMode() {
         guard mouseController.isDragging else { return }
         mouseController.endDrag()
-        MainActor.assumeIsolated { badge.flashAction() }
+        fireActionIndicators()
+    }
+
+    /// Flash every UI indicator hooked up to onActionFire (menu bar icon)
+    /// plus the cursor badge. Centralized so all four action sites stay in
+    /// lockstep — adding a new indicator only needs one new subscriber.
+    private func fireActionIndicators() {
+        MainActor.assumeIsolated {
+            badge.flashAction()
+            onActionFire?()
+        }
     }
 
     /// Safety net for code paths that destroy or rebuild the tap (sleep/wake,
@@ -472,12 +487,12 @@ final class EventTapManager: @unchecked Sendable {
         // placement, etc.) is intentional and matches OS behavior.
         let count = min(enterClickCount, 2)
         mouseController.click(count: count)
-        MainActor.assumeIsolated { badge.flashAction() }
+        fireActionIndicators()
     }
 
     private func handleRightClick() {
         mouseController.rightClick()
-        MainActor.assumeIsolated { badge.flashAction() }
+        fireActionIndicators()
     }
 
     // MARK: - Core callback

@@ -31,6 +31,9 @@ final class MenuBarManager: NSObject {
         eventTap.onActivationChange = { [weak self] active in
             self?.updateState(active: active)
         }
+        eventTap.onActionFire = { [weak self] in
+            self?.flashAction()
+        }
     }
 
     /// Public entry point for callers (e.g., AppDelegate on config hot-reload)
@@ -70,6 +73,24 @@ final class MenuBarManager: NSObject {
     /// on the hosting view (the status item button itself).
     private func applyActiveTint(active: Bool, button: NSStatusBarButton) {
         button.contentTintColor = active ? .systemRed : nil
+    }
+
+    /// Bumped per flash so a delayed restore from an OLD flash can't clobber
+    /// the result of a NEW flash that fired in the meantime.
+    private var flashGen: UInt64 = 0
+
+    /// Flash the menu bar icon green for ~150ms — mirrors the cursor badge's
+    /// action-confirmation flash so the two indicators stay in sync visually.
+    func flashAction() {
+        guard let button = statusItem.button else { return }
+        flashGen &+= 1
+        let gen = flashGen
+        button.contentTintColor = .systemGreen
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            guard let self = self, self.flashGen == gen, let button = self.statusItem.button else { return }
+            // Restore the resting color appropriate for current active state.
+            self.applyActiveTint(active: self.eventTap.isActive, button: button)
+        }
     }
 
     private func rebuildMenu(active: Bool) {
