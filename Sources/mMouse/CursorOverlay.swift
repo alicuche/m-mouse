@@ -46,7 +46,12 @@ final class CursorOverlay {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
-        panel.level = .statusBar
+        // Stay ABOVE context menus / popups (NSWindow.Level.popUpMenu).
+        // Otherwise right-click menus render on top of the overlay and the
+        // user can't see where the aim is to navigate menu items.
+        // +1 puts us one level higher than any popup, but below screensaver.
+        let popUpLevel = Int(CGWindowLevelForKey(.popUpMenuWindow))
+        panel.level = NSWindow.Level(rawValue: popUpLevel + 1)
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
         panel.ignoresMouseEvents = true
         panel.hidesOnDeactivate = false
@@ -111,17 +116,20 @@ final class CursorOverlay {
         panel.orderOut(nil)
     }
 
-    /// Switch overlay to drag visual (orange lasso) or back to idle.
-    /// Bumps generation so any in-flight flash restore won't clobber the new state.
+    /// Enter/exit drag visual state. During drag, the system cursor is
+    /// re-shown by EventTapManager so the user can see the real cursor move
+    /// (apps need it to draw selection rectangles). Our overlay would just
+    /// be visual noise on top of the real cursor — hide it entirely while
+    /// dragging, restore it (red cursorarrow) when drag ends.
     func setDragMode(_ active: Bool) {
         flashGeneration &+= 1
         inDragMode = active
         if active {
-            imageView.image = dragImage
-            imageView.contentTintColor = dragTint
+            panel.orderOut(nil)
         } else {
             imageView.image = idleImage
             imageView.contentTintColor = idleTint
+            panel.orderFrontRegardless()
         }
     }
 
