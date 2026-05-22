@@ -31,6 +31,14 @@ final class MouseController: @unchecked Sendable {
     /// Speed level 1..10 (clamped). 1 = chậm, 10 = nhanh nhất.
     var speedLevel: Int = 5
 
+    /// Active multiplier from external boost modifier (default 1× = off).
+    /// Applied on top of `pixelsPerTickBase` and `accelMultiplier()`.
+    private var boostMultiplier: Double = 1.0
+
+    func setBoost(_ multiplier: Double) {
+        boostMultiplier = max(0.1, multiplier)
+    }
+
     /// Base pixels per tick (before acceleration). Quadratic so:
     /// - speed 1 → ~0.5 px/tick (60 px/s base) — precision
     /// - speed 3 → ~4.5 px/tick (270 px/s base) — text-cursor-ish default
@@ -99,6 +107,23 @@ final class MouseController: @unchecked Sendable {
         stopTimer()
     }
 
+    /// Move cursor to the center of the display that currently contains it
+    /// (or the main display if none match). Used on activation so the user
+    /// has a predictable starting position.
+    func centerCursorOnCurrentDisplay() {
+        let current = realCursorPosition()
+        let displays = cachedDisplayBounds.isEmpty ? [CGDisplayBounds(CGMainDisplayID())] : cachedDisplayBounds
+        let active = displays.first(where: { $0.contains(current) }) ?? displays[0]
+        let center = CGPoint(x: active.midX, y: active.midY)
+        ownedCursorPos = center
+        if let event = CGEvent(mouseEventSource: nil,
+                               mouseType: .mouseMoved,
+                               mouseCursorPosition: center,
+                               mouseButton: .left) {
+            event.post(tap: .cghidEventTap)
+        }
+    }
+
     // MARK: - Click actions
 
     /// Post a left click. `count=1` → single click. `count=2` after a count=1
@@ -142,7 +167,7 @@ final class MouseController: @unchecked Sendable {
 
         var dx: Double = 0
         var dy: Double = 0
-        let step = pixelsPerTickBase * accelMultiplier()
+        let step = pixelsPerTickBase * accelMultiplier() * boostMultiplier
 
         if activeDirections.contains(.up)    { dy -= step }
         if activeDirections.contains(.down)  { dy += step }

@@ -105,6 +105,8 @@ File: `~/.mMouse.json` (tự tạo lần đầu).
 | `activationCombo.windowMs` | Khoảng thời gian tối đa giữa các lần nhấn | ms |
 | `keys.up/down/left/right` | Phím di chuyển | tên phím (vd: `"up"`, `"down"`, `"k"`, `"j"`...) |
 | `speed` | Tốc độ di chuyển | **int 1..10** (xem bảng dưới) |
+| `speedBoost.modifier` | Modifier giữ kèm movement key để tăng tốc | tên modifier (vd: `"command"`, `"option"`, `"command+shift"`) |
+| `speedBoost.multiplier` | Hệ số nhân tốc độ khi giữ boost modifier | số (mặc định `5`) |
 
 ### Speed cheat sheet (quadratic curve + acceleration)
 
@@ -117,6 +119,10 @@ File: `~/.mMouse.json` (tự tạo lần đầu).
 | 10 | ~50 px | ~3750 px | Fastest crossing |
 
 **Acceleration**: tap nhanh = di chuyển ít (0.3×), giữ phím lâu = ramp lên 2.5× sau 400ms. Tự nhiên như mouse thật — tap để chỉnh chính xác, hold để di chuyển dài.
+
+**Speed boost** (mặc định Cmd): giữ Cmd + arrow → speed × 5 (config `speedBoost.multiplier`). Dùng để cross screen nhanh mà không cần đổi tốc độ trong config.
+
+**Auto-center on activate**: mỗi lần activate, cursor tự nhảy về **giữa display** đang dùng → start point luôn nhất quán.
 
 Sửa file → save → mMouse tự reload, không cần restart.
 

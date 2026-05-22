@@ -189,6 +189,8 @@ final class EventTapManager: @unchecked Sendable {
         var downKey: CGKeyCode = EventTapManager.unmappedKey
         var leftKey: CGKeyCode = EventTapManager.unmappedKey
         var rightKey: CGKeyCode = EventTapManager.unmappedKey
+        var boostModifier: CGEventFlags = []
+        var boostMultiplier: Double = 1.0
     }
     private var keys = CachedKeys()
     private var movementKeyCodes: Set<CGKeyCode> = []
@@ -233,6 +235,15 @@ final class EventTapManager: @unchecked Sendable {
 
         movementKeyCodes = Set([keys.upKey, keys.downKey, keys.leftKey, keys.rightKey]
             .filter { $0 != EventTapManager.unmappedKey })
+
+        // Speed boost modifier (vd: Cmd held + arrow = 5× speed)
+        if let mod = KeyMapping.modifierFlag(for: c.speedBoost.modifier) {
+            keys.boostModifier = mod
+        } else {
+            print("[mMouse] WARNING: Unknown speedBoost modifier '\(c.speedBoost.modifier)' — boost disabled")
+            keys.boostModifier = []
+        }
+        keys.boostMultiplier = max(1.0, c.speedBoost.multiplier)
 
         // Foot-gun guard: with a `none` modifier, an activation key that also
         // appears in movement keys would consume every press of that key,
@@ -279,9 +290,13 @@ final class EventTapManager: @unchecked Sendable {
 
     private func toggleActivation() {
         isActive.toggle()
-        if !isActive {
+        if isActive {
+            // Park cursor at center of current display for predictable start.
+            mouseController.centerCursorOnCurrentDisplay()
+        } else {
             mouseController.releaseAll()
             heldMovement.removeAll()
+            mouseController.setBoost(1.0)
         }
         enterClickCount = 0
         enterClickResetWork?.cancel()
@@ -289,6 +304,15 @@ final class EventTapManager: @unchecked Sendable {
         autoDeactivateWork?.cancel()
         autoDeactivateWork = nil
         print("[mMouse] mMouse mode: \(isActive ? "ACTIVE" : "inactive")")
+    }
+
+    private func updateBoostFromFlags(_ flags: CGEventFlags) {
+        guard !keys.boostModifier.isEmpty else {
+            mouseController.setBoost(1.0)
+            return
+        }
+        let boostOn = flags.intersection(keys.boostModifier) == keys.boostModifier
+        mouseController.setBoost(boostOn ? keys.boostMultiplier : 1.0)
     }
 
     // MARK: - Movement key tracking
@@ -370,7 +394,11 @@ final class EventTapManager: @unchecked Sendable {
         }
 
         // flagsChanged: always pass through so apps see modifier state changes.
+        // Also tracks boost modifier so a held Cmd multiplies movement speed.
         if type == .flagsChanged {
+            if isActive {
+                updateBoostFromFlags(event.flags)
+            }
             return Unmanaged.passUnretained(event)
         }
 
@@ -414,6 +442,10 @@ final class EventTapManager: @unchecked Sendable {
 
         if movementKeyCodes.contains(keyCode) {
             cancelAutoDeactivate()
+            // Re-evaluate boost from current flags — covers the case where
+            // the modifier was already held before the first movement keyDown
+            // (no flagsChanged fires for that).
+            updateBoostFromFlags(flags)
             handleMovementKey(keyCode: keyCode, type: type, isRepeat: isRepeat)
             return nil
         }

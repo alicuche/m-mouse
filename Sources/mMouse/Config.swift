@@ -32,17 +32,51 @@ struct KeyConfig: Codable, Equatable {
     )
 }
 
+struct SpeedBoostConfig: Codable, Equatable {
+    /// Modifier that, when held with a movement key, multiplies movement speed.
+    /// Same syntax as activation modifier — supports combos like "command+shift".
+    var modifier: String
+    /// Speed multiplier when boost modifier is held (default 5×).
+    var multiplier: Double
+
+    static let `default` = SpeedBoostConfig(modifier: "command", multiplier: 5)
+}
+
 struct AppConfig: Codable, Equatable {
     var activationCombo: ActivationComboConfig
     var keys: KeyConfig
     /// Speed level 1..10 (1 = chậm, 10 = nhanh nhất)
     var speed: Int
+    /// Modifier+multiplier for speed boost while moving (vd: Cmd+arrow = 5×).
+    var speedBoost: SpeedBoostConfig
 
     static let `default` = AppConfig(
         activationCombo: .default,
         keys: .default,
-        speed: 3
+        speed: 3,
+        speedBoost: .default
     )
+
+    enum CodingKeys: String, CodingKey {
+        case activationCombo, keys, speed, speedBoost
+    }
+
+    init(activationCombo: ActivationComboConfig, keys: KeyConfig, speed: Int, speedBoost: SpeedBoostConfig) {
+        self.activationCombo = activationCombo
+        self.keys = keys
+        self.speed = speed
+        self.speedBoost = speedBoost
+    }
+
+    /// Tolerant decoder so configs written before `speedBoost` was added
+    /// continue to load with the default boost settings.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        activationCombo = try c.decode(ActivationComboConfig.self, forKey: .activationCombo)
+        keys            = try c.decode(KeyConfig.self,              forKey: .keys)
+        speed           = try c.decode(Int.self,                    forKey: .speed)
+        speedBoost      = try c.decodeIfPresent(SpeedBoostConfig.self, forKey: .speedBoost) ?? .default
+    }
 }
 
 final class ConfigManager: @unchecked Sendable {
