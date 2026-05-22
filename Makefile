@@ -31,6 +31,9 @@ bundle: build
 	@mkdir -p $(BUNDLE_DIR)/Contents/Resources
 	@cp $(RELEASE_BIN) $(BUNDLE_DIR)/Contents/MacOS/$(APP_NAME)
 	@cp $(INFO_PLIST) $(BUNDLE_DIR)/Contents/Info.plist
+	@cp Resources/AppIcon.icns $(BUNDLE_DIR)/Contents/Resources/AppIcon.icns
+	@cp Resources/MenuIcon.png $(BUNDLE_DIR)/Contents/Resources/MenuIcon.png
+	@cp Resources/MenuIcon@2x.png $(BUNDLE_DIR)/Contents/Resources/MenuIcon@2x.png
 	@echo "Signing with identity: \"$(SIGN_IDENTITY)\""
 	@codesign --force --deep --sign "$(SIGN_IDENTITY)" --options runtime $(BUNDLE_DIR) 2>/dev/null \
 		|| (echo "⚠  hardened runtime signing failed — falling back to plain sign" && \
@@ -48,6 +51,9 @@ bundle-debug: debug
 	@mkdir -p $(BUNDLE_DIR)/Contents/MacOS $(BUNDLE_DIR)/Contents/Resources
 	@cp $(DEBUG_BIN) $(BUNDLE_DIR)/Contents/MacOS/$(APP_NAME)
 	@cp $(INFO_PLIST) $(BUNDLE_DIR)/Contents/Info.plist
+	@cp Resources/AppIcon.icns $(BUNDLE_DIR)/Contents/Resources/AppIcon.icns
+	@cp Resources/MenuIcon.png $(BUNDLE_DIR)/Contents/Resources/MenuIcon.png
+	@cp Resources/MenuIcon@2x.png $(BUNDLE_DIR)/Contents/Resources/MenuIcon@2x.png
 	@codesign --force --deep --sign "$(SIGN_IDENTITY)" $(BUNDLE_DIR)
 	@echo "Bundle (debug) ready: $(BUNDLE_DIR)"
 

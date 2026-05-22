@@ -8,11 +8,20 @@ final class MenuBarManager: NSObject {
     private let eventTap: EventTapManager
     private let config: ConfigManager
 
-    private let activeSymbol = "🟢"
-    private let inactiveSymbol = "⚪"
+    /// Pre-loaded template image used for the menu bar icon (the mM monogram).
+    /// `isTemplate = true` makes macOS auto-tint it to match the menu bar
+    /// (black in light mode, white in dark mode, with proper highlight handling).
+    private let menuIconImage: NSImage? = {
+        // NSImage(named:) walks the bundle and picks the right @2x variant
+        // for retina displays automatically when "MenuIcon.png" +
+        // "MenuIcon@2x.png" are both present in Contents/Resources.
+        let img = NSImage(named: "MenuIcon")
+        img?.isTemplate = true
+        return img
+    }()
 
     init(eventTap: EventTapManager, config: ConfigManager) {
-        self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         self.eventTap = eventTap
         self.config = config
         super.init()
@@ -32,16 +41,34 @@ final class MenuBarManager: NSObject {
 
     private func setupItem() {
         if let button = statusItem.button {
-            button.title = "\(inactiveSymbol) mM"
+            if let icon = menuIconImage {
+                button.image = icon
+                button.title = ""
+            } else {
+                // Fallback if the bundle didn't ship MenuIcon.png (e.g. dev
+                // run from .build without `make bundle`).
+                button.title = "mM"
+            }
             button.toolTip = "mMouse — keyboard mouse control"
+            // Active mode is indicated by the small CursorBadge following the
+            // cursor on screen; here we tint the menu icon green when active
+            // so users see the state at a glance in the menu bar too.
+            applyActiveTint(active: eventTap.isActive, button: button)
         }
     }
 
     private func updateState(active: Bool) {
         if let button = statusItem.button {
-            button.title = "\(active ? activeSymbol : inactiveSymbol) mM"
+            applyActiveTint(active: active, button: button)
         }
         rebuildMenu(active: active)
+    }
+
+    /// Tint the template image green while active, default color otherwise.
+    /// AppKit handles a template image's color via `contentTintColor` on the
+    /// hosting view (the status item button itself).
+    private func applyActiveTint(active: Bool, button: NSStatusBarButton) {
+        button.contentTintColor = active ? .systemGreen : nil
     }
 
     private func rebuildMenu(active: Bool) {
