@@ -293,14 +293,24 @@ final class MouseController: @unchecked Sendable {
         let next = CGPoint(x: current.x + moveX, y: current.y + moveY)
         let clamped = clampToDisplays(next, current: current)
 
-        // Warp the real cursor every tick. CGWarpMouseCursorPosition generates
-        // a mouseMoved event automatically; apps see the cursor move smoothly.
+        // Warp the real cursor every tick. CGWarpMouseCursorPosition moves the
+        // cursor visually, but in some tracking contexts (notably NSMenu /
+        // right-click context menus, which use SkyLight-level event tracking)
+        // the implicit mouseMoved it generates isn't seen. Symptom: hovering
+        // over menu items via keys doesn't highlight them.
+        //
+        // Fix: post an explicit `.mouseMoved` CGEvent at the new position via
+        // .cghidEventTap. This is dispatched as if it were a real hardware
+        // move and triggers hover highlighting in NSMenu, AppKit/Electron
+        // tooltips, link previews, etc.
         CGWarpMouseCursorPosition(clamped)
-
-        // During drag, an explicit leftMouseDragged event must follow each
-        // position update — apps render selection rectangles from this stream.
         if isDragging {
+            // During drag, the matching dragged event must follow each move
+            // — apps render selection rectangles from THIS stream, not from
+            // mouseMoved. clickCount=1 keeps the drag continuous.
             postMouseEvent(.leftMouseDragged, at: clamped, button: .left, clickCount: 1)
+        } else {
+            postMouseEvent(.mouseMoved, at: clamped, button: .left, clickCount: 0)
         }
     }
 
