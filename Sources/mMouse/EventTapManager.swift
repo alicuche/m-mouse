@@ -89,6 +89,12 @@ final class EventTapManager: @unchecked Sendable {
         if let obs = wakeObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(obs)
         }
+        // Last-resort balance: if we still owe a Show (e.g. app being torn
+        // down while active), restore cursor so user isn't stuck cursorless.
+        // CGDisplayShowCursor is safe on any thread.
+        if cursorHiddenByUs {
+            CGDisplayShowCursor(CGMainDisplayID())
+        }
     }
 
     // MARK: - Tap lifecycle
@@ -328,11 +334,13 @@ final class EventTapManager: @unchecked Sendable {
             if let aim = mouseController.currentAim {
                 MainActor.assumeIsolated { overlay.show(at: aim) }
             }
+            hideSystemCursor()
         } else {
             mouseController.releaseAll()
             heldMovement.removeAll()
             mouseController.setBoost(1.0)
             MainActor.assumeIsolated { overlay.hide() }
+            showSystemCursor()
         }
         enterClickCount = 0
         enterClickResetWork?.cancel()
@@ -340,6 +348,39 @@ final class EventTapManager: @unchecked Sendable {
         heldScroll.removeAll()
         mouseController.stopScroll()
         print("[mMouse] mMouse mode: \(isActive ? "ACTIVE" : "inactive")")
+    }
+
+    // MARK: - System cursor hide/show
+    //
+    // CGDisplayHideCursor is reference-counted: every Hide must be balanced by
+    // exactly one Show or the cursor disappears system-wide until logout.
+    // `cursorHiddenByUs` enforces 1:1 calls regardless of how toggleActivation
+    // is invoked (callback, menu, panic Esc, app-quit cleanup).
+    //
+    // Note on accessory apps: Apple docs say CGDisplayHideCursor only takes
+    // effect while the calling app is active. In practice, a process trusted
+    // for Accessibility can hide the cursor even when not frontmost on recent
+    // macOS versions. If the cursor still shows in some app foregrounds, the
+    // overlay still gives visual aim feedback — primary functionality intact.
+
+    private var cursorHiddenByUs = false
+
+    private func hideSystemCursor() {
+        guard !cursorHiddenByUs else { return }
+        CGDisplayHideCursor(CGMainDisplayID())
+        cursorHiddenByUs = true
+    }
+
+    private func showSystemCursor() {
+        guard cursorHiddenByUs else { return }
+        CGDisplayShowCursor(CGMainDisplayID())
+        cursorHiddenByUs = false
+    }
+
+    /// Called from AppDelegate.applicationWillTerminate. Without this, an
+    /// app crash/quit while active leaves the cursor invisible until logout.
+    func ensureCursorVisibleForShutdown() {
+        showSystemCursor()
     }
 
     private func updateBoostFromFlags(_ flags: CGEventFlags) {

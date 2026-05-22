@@ -65,6 +65,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ensureAccessibilityAndStart()
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        // Restore system cursor in case we hid it for active mode. Without
+        // this, quitting while active leaves the cursor invisible until logout.
+        eventTap?.ensureCursorVisibleForShutdown()
+    }
+
     private func ensureAccessibilityAndStart() {
         if AXIsProcessTrusted() {
             let ok = eventTap.start()
