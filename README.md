@@ -1,93 +1,93 @@
 # mMouse
 
-Điều khiển con trỏ chuột bằng bàn phím trên macOS. Mục tiêu: bỏ chuột càng nhiều càng tốt.
+Keyboard-driven cursor control for macOS. Goal: drop the physical mouse as much as possible.
 
-## Tính năng
+## Features
 
-- **Activation sequence**: nhấn `Cmd + J + J` (J 2 lần trong 500ms) để bật/tắt mMouse mode
-- **Di chuyển**: `h` `j` `k` `l` (vim style) — trái / xuống / lên / phải
-- **Click** *(hardcoded, không config được)*:
+- **Activation sequence**: press `Cmd + J + J` (J twice within 500ms) to toggle mMouse mode
+- **Movement**: `h` `j` `k` `l` (vim style) — left / down / up / right
+- **Click** *(hardcoded, not configurable)*:
   - `Enter` → left click
-  - `Enter × 2` (2 lần liên tiếp trong 400ms) → double click
+  - `Enter × 2` (twice within 400ms) → double click
   - `Shift + Enter` → right click
-- **Scroll**: `Shift + movement_key` → scroll lên/xuống/trái/phải tại vị trí aim
-- **Drag (quét khối)**: `v` toggle → giữ mouseDown tại aim, di chuyển bằng arrows = quét, nhấn `v` lần nữa hoặc `Enter` để commit mouseUp
-- **🔒 Full keyboard lockdown** khi active: mọi phím không phải movement / Enter / Shift+movement / `v` / activation combo đều bị consume — không leak shortcut sang app khác
-- **Speed**: 1 số nguyên 1..10 (1=chậm, 10=nhanh)
-- **Hot-reload** config khi sửa `~/.mMouse.json`
-- **Multi-monitor**: clamp con trỏ trong display đang dùng
-- Menu bar app (không hiện trong Dock)
+- **Scroll**: `Shift + movement_key` → scroll up/down/left/right at the aim position
+- **Drag (block selection)**: `v` toggle → hold mouseDown at aim, move with arrows to select, press `v` again or `Enter` to commit mouseUp
+- **🔒 Full keyboard lockdown** while active: every key that isn't movement / Enter / Shift+movement / `v` / activation combo is consumed — no shortcut leaks to other apps
+- **Speed**: single integer 1..10 (1 = slow, 10 = fast)
+- **Hot-reload** config when `~/.mMouse.json` changes
+- **Multi-monitor**: cursor clamped to the active display
+- Menu bar app (no Dock icon)
 
 ## Build
 
 ```bash
-make setup-cert   # CHẠY 1 LẦN: tạo stable signing cert (xem mục dưới)
-make bundle       # build release + đóng gói .app
-make install      # copy vào /Applications/ (quit instance đang chạy)
-make run          # build và mở app từ .build/
+make setup-cert   # RUN ONCE: create a stable signing cert (see section below)
+make bundle       # build release + assemble .app
+make install      # copy to /Applications/ (quits any running instance)
+make run          # build and open the app from .build/
 ```
 
-Yêu cầu: Xcode Command Line Tools (Swift 5.9+), `openssl` (có sẵn macOS), và macOS 13+.
+Requirements: Xcode Command Line Tools (Swift 5.9+), `openssl` (bundled with macOS), and macOS 13+.
 
-## Quy trình setup chuẩn (làm 1 lần)
+## Standard setup (one time)
 
 ```bash
-make setup-cert   # tạo cert "mMouse Signing" trong login keychain
-make install      # build + cài vào /Applications
+make setup-cert   # create the "mMouse Signing" cert in the login keychain
+make install      # build + install to /Applications
 open /Applications/mMouse.app
 ```
 
-Lần đầu chạy:
-1. App hiện alert yêu cầu Accessibility → bấm **Open System Settings**.
-2. Bật toggle cho `mMouse` trong **Privacy & Security → Accessibility**.
-3. App **tự relaunch** ngay khi detect được permission → tap hoạt động.
+First launch:
+1. The app shows an alert requesting Accessibility → click **Open System Settings**.
+2. Enable the toggle for `mMouse` under **Privacy & Security → Accessibility**.
+3. The app **relaunches itself** automatically once the permission is detected → tap is live.
 
-> 🔑 **Vì sao cần stable cert?**
+> 🔑 **Why a stable cert?**
 >
-> macOS TCC (cơ chế quản lý quyền) gắn permission với **code identity** của binary. Ad-hoc signed app (`codesign --sign -`) tạo identity mới mỗi lần codesign → grant cũ vô hiệu → user phải grant lại mỗi rebuild.
+> macOS TCC (the permissions system) binds a granted permission to the **code identity** of the binary. An ad-hoc signed app (`codesign --sign -`) gets a new identity on every codesign run → the previous grant becomes invalid → you have to grant again on every rebuild.
 >
-> Stable self-signed cert (`make setup-cert`) tạo identity ổn định → grant 1 lần, dùng mãi.
+> A stable self-signed cert (`make setup-cert`) gives you a stable identity → grant once, keep it.
 
-## Sử dụng
+## Usage
 
-| Hành động | Phím |
+| Action | Keys |
 |---|---|
-| **Bật mMouse** | `Cmd + J + J` |
-| **Tắt mMouse** (thủ công) | `Cmd + J + J` hoặc `Esc` |
-| Lên | `k` |
-| Xuống | `j` |
-| Trái | `h` |
-| Phải | `l` |
-| Left click | `Enter` (mode vẫn active — tiếp tục thao tác) |
-| Double click | `Enter × 2` (trong 400ms) |
+| **Enable mMouse** | `Cmd + J + J` |
+| **Disable mMouse** (manual) | `Cmd + J + J` or `Esc` |
+| Up | `k` |
+| Down | `j` |
+| Left | `h` |
+| Right | `l` |
+| Left click | `Enter` (mode stays active — keep interacting) |
+| Double click | `Enter × 2` (within 400ms) |
 | Right click | `Shift + Enter` |
-| Scroll up | `Shift + k` (giữ để scroll liên tục) |
+| Scroll up | `Shift + k` (hold for continuous scroll) |
 | Scroll down | `Shift + j` |
 | Scroll left | `Shift + h` |
 | Scroll right | `Shift + l` |
-| **Drag start / end (quét khối)** | `v` (vim visual mode) |
+| **Drag start / end (block selection)** | `v` (vim visual mode) |
 | End drag (alt) | `Enter` |
-| **Panic exit** (cứu khi stuck) | `Esc` (tự commit drag nếu đang quét) |
+| **Panic exit** (escape hatch when stuck) | `Esc` (auto-commits an in-progress drag) |
 
-> 💡 **Sticky active mode**: sau click, mMouse **không tự thoát** — cursor giữ nguyên vị trí, mày tiếp tục di chuyển / click / scroll ngay được. Để thoát, dùng activation combo lần nữa hoặc `Esc`.
+> 💡 **Sticky active mode**: mMouse does **not** auto-deactivate after a click — the cursor stays where it is and you can keep moving / clicking / scrolling. To exit, use the activation combo again or `Esc`.
 
-> 📜 **Scroll**: giữ `Shift + arrow` → scroll wheel tại vị trí aim. Cursor thật sẽ warp đến aim trước khi scroll (để event đáp xuống đúng cửa sổ dưới cursor). Hold ramp up: 0.1s → 1×, 0.5s → 3×.
+> 📜 **Scroll**: hold `Shift + arrow` → posts a scroll wheel event at the aim position. The real cursor warps to the aim before scrolling (so the event lands on the window under the aim). Hold ramp-up: 0.1s → 1×, 0.5s → 3×.
 
-> 🎯 **Drag (quét khối)**: nhấn `v` để start drag (mouseDown tại aim). Overlay đổi sang icon **lasso màu cam**, system cursor xuất hiện lại (để mày thấy selection rectangle). Di chuyển arrows = drag/quét. Nhấn `v` lần nữa, `Enter`, hoặc `Esc` để commit mouseUp. Trong drag mode, `Shift + arrow` vẫn là drag-move (không scroll) — Shift được pass-through để app xử lý (vd Shift+drag để extend selection trong text editor).
+> 🎯 **Drag (block selection)**: press `v` to start drag (mouseDown at the aim). The overlay hides — the **system cursor reappears** so you can see the selection rectangle apps draw. Move with arrows to drag. Press `v` again, `Enter`, or `Esc` to commit the mouseUp. Inside drag mode, `Shift + arrow` is still drag-move (not scroll) — Shift is passed through to the app so things like Shift+drag to extend a selection in a text editor work as expected.
 
 Menu bar:
-- `⚪ mM` — inactive (phím gõ bình thường)
-- `🟢 mM` — active (toàn bộ phím khác bị khoá; chỉ phím trên có tác dụng)
+- `⚪ mM` — inactive (typing works normally)
+- `🟢 mM` — active (every other key is locked; only the keys above do anything)
 
-### Tại sao lockdown toàn bộ phím?
+### Why lock down every key?
 
-Để **chống conflict** với shortcut của app khác. Vd: khi active mà mày vô tình gõ `w`, nếu không lock thì Cmd+W (nếu đang giữ Cmd) sẽ đóng tab. Lockdown đảm bảo chế độ active là **pure mouse mode** — không có gì khác lọt qua.
+To **prevent conflicts** with other apps' shortcuts. Example: if you accidentally press `w` while active and we didn't lock keys, Cmd+W (if Cmd happens to be held) would close a tab. Lockdown guarantees active mode is **pure mouse mode** — nothing else leaks through.
 
-Muốn gõ chữ → deactivate trước (`Cmd+J+J`).
+Want to type → deactivate first (`Cmd+J+J`).
 
 ## Config
 
-File: `~/.mMouse.json` (tự tạo lần đầu).
+File: `~/.mMouse.json` (created on first launch).
 
 ```json
 {
@@ -107,50 +107,50 @@ File: `~/.mMouse.json` (tự tạo lần đầu).
 }
 ```
 
-### Tham số
+### Parameters
 
-| Field | Ý nghĩa | Giá trị |
+| Field | Meaning | Value |
 |---|---|---|
-| `activationCombo.modifier` | Modifier giữ khi nhập combo. Hỗ trợ **combo modifier** bằng `+` (vd: `"command+shift"`) | `command` \| `control` \| `option` \| `shift` \| `none` \| hoặc combo `"a+b"` |
-| `activationCombo.key` | Phím chính của combo | `a-z`, `0-9`, hoặc tên đặc biệt (`space`, `tab`, `f1`...`f12`, `escape`,...) |
-| `activationCombo.repeatCount` | Số lần nhấn phím chính (vd: 2 = double-tap) | int ≥ 1 |
-| `activationCombo.windowMs` | Khoảng thời gian tối đa giữa các lần nhấn | ms |
-| `keys.up/down/left/right` | Phím di chuyển | tên phím (vd: `"up"`, `"down"`, `"k"`, `"j"`...) |
-| `speed` | Tốc độ di chuyển | **int 1..10** (xem bảng dưới) |
-| `speedBoost.modifier` | Modifier giữ kèm movement key để tăng tốc | tên modifier (vd: `"command"`, `"option"`, `"command+shift"`) |
-| `speedBoost.multiplier` | Hệ số nhân tốc độ khi giữ boost modifier | số (mặc định `5`) |
+| `activationCombo.modifier` | Modifier held while entering the combo. Supports **combo modifiers** with `+` (e.g. `"command+shift"`) | `command` \| `control` \| `option` \| `shift` \| `none` \| or a combo like `"a+b"` |
+| `activationCombo.key` | The main key of the combo | `a-z`, `0-9`, or a named key (`space`, `tab`, `f1`...`f12`, `escape`, ...) |
+| `activationCombo.repeatCount` | How many times the main key must be pressed (e.g. 2 = double-tap) | int ≥ 1 |
+| `activationCombo.windowMs` | Max milliseconds between presses | ms |
+| `keys.up/down/left/right` | Movement keys | key name (e.g. `"up"`, `"down"`, `"k"`, `"j"`...) |
+| `speed` | Movement speed | **int 1..10** (see table below) |
+| `speedBoost.modifier` | Modifier held with a movement key to boost speed | modifier name (e.g. `"command"`, `"option"`, `"command+shift"`) |
+| `speedBoost.multiplier` | Speed multiplier while the boost modifier is held | number (default `5`) |
 
 ### Speed cheat sheet (quadratic curve + acceleration)
 
 | Speed | Tap (~50ms) | Hold 1s | Use case |
 |---|---|---|---|
 | 1 | ~1 px | ~80 px | Pixel-perfect precision |
-| 3 (mặc định) | ~4 px | ~340 px | Text-cursor-like, precise UI |
+| 3 (default) | ~4 px | ~340 px | Text-cursor-like, precise UI |
 | 5 | ~12 px | ~940 px | General use |
 | 7 | ~25 px | ~1800 px | Big screens |
 | 10 | ~50 px | ~3750 px | Fastest crossing |
 
-**Acceleration**: tap nhanh = di chuyển ít (0.3×), giữ phím lâu = ramp lên 2.5× sau 400ms. Tự nhiên như mouse thật — tap để chỉnh chính xác, hold để di chuyển dài.
+**Acceleration**: a quick tap moves only a little (0.3×), holding the key ramps up to 2.5× after 400ms. Feels like a real mouse — tap to fine-tune, hold for long traversals.
 
-**Speed boost** (mặc định Cmd): giữ Cmd + arrow → speed × 5 (config `speedBoost.multiplier`). Dùng để cross screen nhanh mà không cần đổi tốc độ trong config.
+**Speed boost** (default Cmd): hold Cmd + arrow → speed × 5 (configurable via `speedBoost.multiplier`). Lets you cross the screen quickly without changing the base speed in config.
 
-**Auto-center on activate**: mỗi lần activate, **aim overlay** (icon scope màu xanh) xuất hiện giữa display → start point nhất quán.
+**Auto-center on activate**: each time you activate, the **aim overlay** (a small cursorarrow icon) appears at the center of the current display → a consistent starting point.
 
 ### Cursor overlay mode
 
-Trong active mode, mMouse **không di chuyển con trỏ thật** (cursor system đứng yên ở vị trí cũ). Thay vào đó, một **floating icon** (target reticle) di chuyển theo phím — đây là "aim".
+While active, mMouse **does not move the real cursor** (the system cursor stays parked where it was). Instead a **floating icon** (the "aim") moves with the keys.
 
-- Movement keys (arrows) → di chuyển aim icon
-- `Enter` / `Shift+Enter` → real cursor **warp đến aim position** rồi click ngay
+- Movement keys (arrows) → move the aim icon
+- `Enter` / `Shift+Enter` → real cursor **warps to the aim position** and clicks immediately
 
-Lợi ích:
-- Aim không trigger hover effects (tooltip, highlight) khi đang định vị
-- Visual feedback rõ — mày luôn biết cursor sẽ rơi ở đâu
-- Click "snap" cảm giác chính xác hơn
+Benefits:
+- The aim does not trigger hover effects (tooltips, highlights) while you're positioning
+- Clear visual feedback — you always know where the cursor will land
+- "Snap" clicks feel more precise
 
-Sửa file → save → mMouse tự reload, không cần restart.
+Edit the file → save → mMouse reloads automatically, no restart needed.
 
-### Ví dụ: activate bằng `Cmd + Shift + →` (nhấn 1 lần)
+### Example: activate with `Cmd + Shift + →` (single press)
 
 ```json
 "activationCombo": {
@@ -161,69 +161,69 @@ Sửa file → save → mMouse tự reload, không cần restart.
 }
 ```
 
-> ⚠️ `repeatCount: 1` nghĩa là **nhấn 1 lần là kích hoạt ngay**. An toàn hơn dùng `repeatCount: 2` (double-tap) nếu combo trùng với shortcut app khác.
+> ⚠️ `repeatCount: 1` means **a single press activates immediately**. Safer to use `repeatCount: 2` (double-tap) if your combo overlaps with another app's shortcut.
 
-### Các ví dụ combo khác
+### Other combo examples
 
 ```json
 "modifier": "command"           // 1 modifier
-"modifier": "command+shift"     // 2 modifier
-"modifier": "ctrl+option+shift" // 3 modifier
-"modifier": "none"              // không cần modifier (rủi ro cao)
+"modifier": "command+shift"     // 2 modifiers
+"modifier": "ctrl+option+shift" // 3 modifiers
+"modifier": "none"              // no modifier required (risky)
 ```
 
-> Click keys (Enter / Shift+Enter) **hardcoded** — không có trong config.
+> Click keys (Enter / Shift+Enter) are **hardcoded** — they are not in the config.
 
 ## Menu bar items
 
-- **Activate / Deactivate** — toggle bằng tay
-- **Open Config** — mở file `~/.mMouse.json`
+- **Activate / Deactivate** — manual toggle
+- **Open Config** — open `~/.mMouse.json`
 - **Reload Config** — force reload
-- **Reveal in Finder** — chỉ vị trí file
+- **Reveal in Finder** — show the config file in Finder
 - **Quit mMouse**
 
-## Trade-off cần biết
+## Trade-offs to be aware of
 
-- Lần nhấn `Cmd+J` đầu trong sequence **luôn bị suppress**. Nếu không có J thứ 2 trong 500ms, keypress đầu đó mất (không pass tới app).
-- Khi active: **mọi phím** đều bị khoá ngoài h/j/k/l/Shift+(h/j/k/l)/Enter/Shift+Enter/activation. Cmd+Tab, Cmd+Q, gõ chữ — tất cả bị consume.
-- Click không tự thoát mode — phải nhấn activation combo lần nữa hoặc `Esc` để thoát.
+- The first `Cmd+J` press in the sequence is **always suppressed**. If a second J doesn't follow within 500ms, that first press is dropped (it never reaches the app underneath).
+- While active: **every key** is locked except h/j/k/l/Shift+(h/j/k/l)/Enter/Shift+Enter/`v`/activation. Cmd+Tab, Cmd+Q, typing — all consumed.
+- Click does not auto-exit the mode — press the activation combo again or `Esc` to leave.
 
 ## Troubleshooting
 
-### Lần nào mở app cũng prompt grant permission lại
+### App prompts for permission every time it launches
 
-Đây là vấn đề ad-hoc TCC. Fix triệt để:
+This is the ad-hoc TCC problem. Permanent fix:
 
 ```bash
-make setup-cert        # tạo stable cert (1 lần duy nhất)
-make tcc-reset         # clear toàn bộ TCC entry cũ của mMouse
-make install           # rebuild + reinstall với cert mới
+make setup-cert        # create a stable cert (run once)
+make tcc-reset         # clear stale TCC entries for mMouse
+make install           # rebuild + reinstall with the new cert
 open /Applications/mMouse.app
-# Grant permission lại — lần này sẽ persist
+# Grant permission again — this time it persists.
 ```
 
-Một-liner cho recovery: `make reinstall` (= `tcc-reset` + `install`).
+Recovery one-liner: `make reinstall` (= `tcc-reset` + `install`).
 
-Kiểm tra signing identity hiện tại:
+Check the current signing identity:
 ```bash
 make sign-info
 ```
-Output mong đợi: `Authority=mMouse Signing` (không phải `Signature=adhoc`).
+Expected output: `Authority=mMouse Signing` (not `Signature=adhoc`).
 
-### Tap bị disable bởi secure input
-Khi nhập password sudo trong Terminal, macOS auto-disable tap. mMouse tự re-enable khi thoát secure input.
+### Tap disabled by secure input
+While typing a sudo password in Terminal, macOS auto-disables event taps. mMouse re-enables itself once secure input is released.
 
-### Tap chết sau sleep/wake
-mMouse có `NSWorkspace.didWakeNotification` listener tự recreate tap. Vẫn không hoạt động → menu bar → **Quit** → mở lại.
+### Tap dies after sleep/wake
+mMouse listens for `NSWorkspace.didWakeNotification` and recreates the tap. If it still doesn't work → menu bar → **Quit** → reopen.
 
-### Bị stuck trong active mode (lỡ activate mà không gõ được gì)
-Nhấn `Cmd+J+J` để deactivate. Hoặc click menu bar `🟢 mM` → **Deactivate** (chuột vật lý vẫn dùng được).
+### Stuck in active mode (activated but can't type)
+Press `Cmd+J+J` to deactivate. Or click the menu bar `🟢 mM` → **Deactivate** (the physical mouse still works either way).
 
-### Sau khi grant permission, alert vẫn hiện
-App sẽ tự relaunch khi detect permission. Nếu vẫn loop:
+### After granting permission, the alert still appears
+The app relaunches itself once the permission is detected. If it still loops:
 ```bash
 make tcc-reset
-open /Applications/mMouse.app   # bắt đầu lại fresh
+open /Applications/mMouse.app   # start fresh
 ```
 
 ## Architecture
@@ -236,4 +236,4 @@ AppDelegate (@main)
   └── MenuBarManager      — NSStatusItem
 ```
 
-CGEventTap: `.cgSessionEventTap` + `.headInsertEventTap` + `.defaultTap`. Không sandboxed (bắt buộc cho `.defaultTap` consume).
+CGEventTap: `.cgSessionEventTap` + `.headInsertEventTap` + `.defaultTap`. Not sandboxed (required for `.defaultTap` to consume events).

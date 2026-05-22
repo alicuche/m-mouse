@@ -45,9 +45,9 @@ struct SpeedBoostConfig: Codable, Equatable {
 struct AppConfig: Codable, Equatable {
     var activationCombo: ActivationComboConfig
     var keys: KeyConfig
-    /// Speed level 1..10 (1 = chậm, 10 = nhanh nhất)
+    /// Speed level 1..10 (1 = slowest, 10 = fastest)
     var speed: Int
-    /// Modifier+multiplier for speed boost while moving (vd: Cmd+arrow = 5×).
+    /// Modifier+multiplier for speed boost while moving (e.g. Cmd+arrow = 5×).
     var speedBoost: SpeedBoostConfig
 
     static let `default` = AppConfig(

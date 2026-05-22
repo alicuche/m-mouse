@@ -307,7 +307,7 @@ final class EventTapManager: @unchecked Sendable {
         movementKeyCodes = Set([keys.upKey, keys.downKey, keys.leftKey, keys.rightKey]
             .filter { $0 != EventTapManager.unmappedKey })
 
-        // Speed boost modifier (vd: Cmd held + arrow = 5× speed)
+        // Speed boost modifier (e.g. Cmd held + arrow = 5× speed)
         if let mod = KeyMapping.modifierFlag(for: c.speedBoost.modifier) {
             keys.boostModifier = mod
         } else {

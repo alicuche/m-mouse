@@ -35,7 +35,7 @@ final class MouseController: @unchecked Sendable {
         case up, down, left, right
     }
 
-    /// Speed level 1..10 (clamped). 1 = chậm, 10 = nhanh nhất.
+    /// Speed level 1..10 (clamped). 1 = slowest, 10 = fastest.
     var speedLevel: Int = 5
 
     /// Active multiplier from external boost modifier (default 1× = off).
