@@ -367,9 +367,11 @@ final class EventTapManager: @unchecked Sendable {
     private func toggleActivation() {
         isActive.toggle()
         if isActive {
-            // Aim starts at center of current display; show the floating
-            // overlay there. Real mouse cursor is NOT moved.
-            mouseController.centerAimOnCurrentDisplay()
+            // Aim starts at the current real cursor position — wherever the
+            // user was already looking. Real mouse cursor is NOT moved; the
+            // overlay simply appears on top of it, then the system cursor is
+            // hidden so the user only sees the overlay from here on.
+            mouseController.setAimToRealCursor()
             if let aim = mouseController.currentAim {
                 MainActor.assumeIsolated { overlay.show(at: aim) }
             }

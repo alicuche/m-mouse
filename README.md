@@ -134,7 +134,7 @@ File: `~/.mMouse.json` (created on first launch).
 
 **Speed boost** (default Cmd): hold Cmd + arrow → speed × 5 (configurable via `speedBoost.multiplier`). Lets you cross the screen quickly without changing the base speed in config.
 
-**Auto-center on activate**: each time you activate, the **aim overlay** (a small cursorarrow icon) appears at the center of the current display → a consistent starting point.
+**Start where you are**: on activate, the **aim overlay** (a small cursorarrow icon) appears at the **current real cursor position** — no jarring jump to screen center. From there, arrows move the aim.
 
 ### Cursor overlay mode
 

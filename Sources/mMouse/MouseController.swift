@@ -114,16 +114,11 @@ final class MouseController: @unchecked Sendable {
         stopTimer()
     }
 
-    /// Sets the aim to the center of the display containing the real cursor
-    /// (or the main display if no display matches). Used on activation so
-    /// the user has a predictable starting point. Does NOT move the real
-    /// cursor — only the aim/overlay position.
-    func centerAimOnCurrentDisplay() {
-        let current = realCursorPosition()
-        let displays = cachedDisplayBounds.isEmpty ? [CGDisplayBounds(CGMainDisplayID())] : cachedDisplayBounds
-        let active = displays.first(where: { $0.contains(current) }) ?? displays[0]
-        let center = CGPoint(x: active.midX, y: active.midY)
-        setAim(center)
+    /// Sets the aim to the current real cursor position. Used on activation so
+    /// the overlay starts exactly where the user was looking — no jarring jump
+    /// to screen center. Does NOT move the real cursor.
+    func setAimToRealCursor() {
+        setAim(realCursorPosition())
     }
 
     // MARK: - Click actions
@@ -156,7 +151,7 @@ final class MouseController: @unchecked Sendable {
     /// by the `isDragging` flag.
     func startDrag() {
         guard !isDragging else { return }
-        if aimPosition == nil { centerAimOnCurrentDisplay() }
+        if aimPosition == nil { setAimToRealCursor() }
         let pos = warpRealCursorToAim()
         postMouseEvent(.leftMouseDown, at: pos, button: .left, clickCount: 1)
         isDragging = true
@@ -188,11 +183,10 @@ final class MouseController: @unchecked Sendable {
 
     func pressScroll(_ direction: Direction) {
         if activeScrollDirections.isEmpty {
-            // Ensure aim exists — if scroll is the first action after activation
-            // (no movement yet), aim is set by centerAimOnCurrentDisplay; but
-            // guard against future code paths reaching here with nil aim so
-            // scroll never lands at a surprising real-cursor position.
-            if aimPosition == nil { centerAimOnCurrentDisplay() }
+            // Ensure aim exists — activation sets aim to the real cursor
+            // position, but defend against future code paths that might
+            // reach here with nil aim.
+            if aimPosition == nil { setAimToRealCursor() }
             // Warp real cursor to aim once — subsequent scrolls re-use that
             // position. Scroll events are dispatched at the cursor location.
             let pos = warpRealCursorToAim()
