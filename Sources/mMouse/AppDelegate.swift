@@ -9,7 +9,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var mouseController: MouseController!
     private var eventTap: EventTapManager!
     private var menuBar: MenuBarManager!
-    private var overlay: CursorOverlay!
     private let configManager = ConfigManager.shared
 
     private var permissionPollTimer: Timer?
@@ -48,11 +47,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
 
         mouseController = MouseController()
-        overlay = CursorOverlay()
         // EventTapManager.init → rebuildKeyTables() sets speedLevel from config;
         // no need to set it here.
 
-        eventTap = EventTapManager(config: configManager.config, mouseController: mouseController, overlay: overlay)
+        eventTap = EventTapManager(config: configManager.config, mouseController: mouseController)
         menuBar = MenuBarManager(eventTap: eventTap, config: configManager)
 
         configManager.onReload = { [weak self] cfg in
@@ -66,14 +64,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        // Force-deactivate first: ends any in-progress drag (posts mouseUp so
-        // the foreground app doesn't get stuck with a hanging button-down),
-        // releases held movement/scroll, and restores the system cursor.
+        // Force-deactivate ends any in-progress drag (posts mouseUp so the
+        // foreground app doesn't get stuck with a hanging button-down) and
+        // releases held movement/scroll timers.
         eventTap?.forceDeactivate()
-        // Belt-and-suspenders: if forceDeactivate was a no-op because we
-        // weren't active, still ensure cursor is visible (defends against a
-        // stuck-hidden state from any prior abnormal exit path).
-        eventTap?.ensureCursorVisibleForShutdown()
     }
 
     private func ensureAccessibilityAndStart() {

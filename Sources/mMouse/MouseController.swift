@@ -2,23 +2,14 @@ import AppKit
 import CoreGraphics
 import Foundation
 
+/// Direct real-cursor control. Movement keys warp the system cursor; click /
+/// scroll / drag are dispatched at the cursor's current position. No floating
+/// aim overlay — what you see is the system cursor, and it really moves.
 final class MouseController: @unchecked Sendable {
     private var moveTimer: DispatchSourceTimer?
     private var activeDirections: Set<Direction> = []
     private var tickAccumX: Double = 0
     private var tickAccumY: Double = 0
-
-    /// The "aim" position. Driven by movement keys (NOT the real cursor —
-    /// the real cursor stays parked so hover effects don't fire while aiming).
-    /// Real cursor is only warped to this position when a click commits.
-    private var aimPosition: CGPoint?
-
-    /// Called every tick the aim position changes. Used by CursorOverlay
-    /// to render the floating aim icon. Always invoked on main thread.
-    var onAimChanged: (@MainActor (CGPoint) -> Void)?
-
-    /// Current aim position, or nil if no movement burst is active.
-    var currentAim: CGPoint? { aimPosition }
 
     /// Timestamp of current movement burst — used for acceleration.
     /// Short taps stay slow (precision); held keys ramp up to full speed.
@@ -94,8 +85,6 @@ final class MouseController: @unchecked Sendable {
 
     func press(_ direction: Direction) {
         if activeDirections.isEmpty {
-            // Don't sync to real cursor — aim was set explicitly by overlay
-            // (e.g., centerAim called on activation). Just start ticking.
             movementStartedAt = CACurrentMediaTime()
         }
         activeDirections.insert(direction)
@@ -114,58 +103,19 @@ final class MouseController: @unchecked Sendable {
         stopTimer()
     }
 
-    /// Sets the aim to the current real cursor position. Used on activation so
-    /// the overlay starts exactly where the user was looking — no jarring jump
-    /// to screen center. Does NOT move the real cursor.
-    ///
-    /// Cross-references two APIs because `CGEvent(source:nil)?.location` was
-    /// observed to return a stale position right after `CGDisplayShowCursor`
-    /// on some setups (cursor "logical position" lagged behind physical mouse
-    /// movement that happened while the cursor was hidden). NSEvent's
-    /// mouseLocation is sourced from a different layer and stays live. We
-    /// prefer the NSEvent reading when the two disagree by more than a few px.
-    func setAimToRealCursor() {
-        let cg = realCursorPosition()
-        let ns = realCursorPositionFromNSEvent()
-        let dx = abs(cg.x - ns.x)
-        let dy = abs(cg.y - ns.y)
-        let chosen: CGPoint
-        if dx > 3 || dy > 3 {
-            // Source disagreement is the smoking gun for the stale-CG bug:
-            // CGEvent(source:nil)?.location can lag behind physical movement
-            // after CGDisplayShowCursor on some setups. NSEvent.mouseLocation
-            // is sourced from a different layer and stays live.
-            chosen = ns
-            print("[mMouse] activate: cursor sources disagree — CG=(\(Int(cg.x)),\(Int(cg.y))) NS=(\(Int(ns.x)),\(Int(ns.y))) → using NS")
-        } else {
-            chosen = cg
-            print("[mMouse] activate: aim → (\(Int(chosen.x)),\(Int(chosen.y)))")
-        }
-        setAim(chosen)
-    }
-
-    /// Cursor position via NSEvent.mouseLocation (NS bottom-left coords)
-    /// converted to CG top-left. Used as a cross-check in `setAimToRealCursor`.
-    private func realCursorPositionFromNSEvent() -> CGPoint {
-        let ns = NSEvent.mouseLocation
-        let primaryHeight = CGDisplayBounds(CGMainDisplayID()).height
-        return CGPoint(x: ns.x, y: primaryHeight - ns.y)
-    }
-
     // MARK: - Click actions
 
-    /// Post a left click at the current aim position (warping the real
-    /// cursor there first). `count=1` → single click. `count=2` after a
-    /// count=1 registers as double-click.
+    /// Post a left click at the current cursor position.
+    /// `count=1` → single click. `count=2` after a count=1 registers as double-click.
     func click(count: Int = 1) {
-        let pos = warpToAim()
+        let pos = realCursorPosition()
         let clamped = max(1, min(3, count))
         postMouseEvent(.leftMouseDown, at: pos, button: .left, clickCount: Int64(clamped))
         postMouseEvent(.leftMouseUp,   at: pos, button: .left, clickCount: Int64(clamped))
     }
 
     func rightClick() {
-        let pos = warpToAim()
+        let pos = realCursorPosition()
         postMouseEvent(.rightMouseDown, at: pos, button: .right, clickCount: 1)
         postMouseEvent(.rightMouseUp,   at: pos, button: .right, clickCount: 1)
     }
@@ -173,31 +123,29 @@ final class MouseController: @unchecked Sendable {
     // MARK: - Drag (vim-style visual mode)
 
     /// True from `startDrag()` until `endDrag()`. While true, `tick()` posts
-    /// `leftMouseDragged` events at every aim update so apps render the
-    /// selection rectangle / drag operation.
+    /// `leftMouseDragged` events after each warp so apps render the selection
+    /// rectangle / drag operation.
     private(set) var isDragging: Bool = false
 
-    /// Begin a drag at the current aim. Posts `leftMouseDown` then leaves the
-    /// button held until `endDrag()`. Caller must NOT call this twice — guarded
-    /// by the `isDragging` flag.
+    /// Begin a drag at the current cursor position. Posts `leftMouseDown` then
+    /// leaves the button held until `endDrag()`. Idempotent — guarded by the
+    /// `isDragging` flag.
     func startDrag() {
         guard !isDragging else { return }
-        if aimPosition == nil { setAimToRealCursor() }
-        let pos = warpRealCursorToAim()
+        let pos = realCursorPosition()
         postMouseEvent(.leftMouseDown, at: pos, button: .left, clickCount: 1)
         isDragging = true
         print("[mMouse] drag start at (\(Int(pos.x)),\(Int(pos.y)))")
     }
 
-    /// End a drag — posts `leftMouseUp` at current aim. Safe to call when not
-    /// dragging (no-op).
+    /// End a drag — posts `leftMouseUp` at current cursor position. Safe to
+    /// call when not dragging (no-op).
     func endDrag() {
         guard isDragging else { return }
-        let target = aimPosition ?? realCursorPosition()
-        CGWarpMouseCursorPosition(target)
-        postMouseEvent(.leftMouseUp, at: target, button: .left, clickCount: 1)
+        let pos = realCursorPosition()
+        postMouseEvent(.leftMouseUp, at: pos, button: .left, clickCount: 1)
         isDragging = false
-        print("[mMouse] drag end at (\(Int(target.x)),\(Int(target.y)))")
+        print("[mMouse] drag end at (\(Int(pos.x)),\(Int(pos.y)))")
     }
 
     // MARK: - Scroll
@@ -214,15 +162,8 @@ final class MouseController: @unchecked Sendable {
 
     func pressScroll(_ direction: Direction) {
         if activeScrollDirections.isEmpty {
-            // Ensure aim exists — activation sets aim to the real cursor
-            // position, but defend against future code paths that might
-            // reach here with nil aim.
-            if aimPosition == nil { setAimToRealCursor() }
-            // Warp real cursor to aim once — subsequent scrolls re-use that
-            // position. Scroll events are dispatched at the cursor location.
-            let pos = warpRealCursorToAim()
             scrollStartedAt = CACurrentMediaTime()
-            print("[mMouse] scroll start at (\(Int(pos.x)),\(Int(pos.y))) dir=\(direction)")
+            print("[mMouse] scroll start dir=\(direction)")
         }
         activeScrollDirections.insert(direction)
         startScrollTimerIfNeeded()
@@ -275,15 +216,6 @@ final class MouseController: @unchecked Sendable {
         postScrollEvent(deltaY: dy, deltaX: dx)
     }
 
-    /// Warp the real cursor to the aim (without firing onClickCommit, since
-    /// this isn't a click — used by scroll to position before posting wheel events).
-    @discardableResult
-    private func warpRealCursorToAim() -> CGPoint {
-        let target = aimPosition ?? realCursorPosition()
-        CGWarpMouseCursorPosition(target)
-        return target
-    }
-
     private func postScrollEvent(deltaY: Int32, deltaX: Int32) {
         // .pixel units are the most widely-supported scroll format across
         // native AppKit, Electron, web browsers, and Terminal. .line units
@@ -310,33 +242,6 @@ final class MouseController: @unchecked Sendable {
         event.post(tap: .cghidEventTap)
     }
 
-    /// Called after a successful click — used by overlay to flash visual feedback.
-    var onClickCommit: (@MainActor () -> Void)?
-
-    /// Warp the real cursor to the current aim (or fall back to real cursor
-    /// position if no aim set). Returns the position used.
-    @discardableResult
-    private func warpToAim() -> CGPoint {
-        let target = aimPosition ?? realCursorPosition()
-        CGWarpMouseCursorPosition(target)
-        // Only flash the overlay when we have a real aim to flash AT —
-        // otherwise we'd flash at last known overlay position while the click
-        // actually happens at the real cursor, a confusing visual desync.
-        if aimPosition != nil, let cb = onClickCommit {
-            MainActor.assumeIsolated { cb() }
-        }
-        return target
-    }
-
-    /// Sets the aim position explicitly (used by EventTapManager to center
-    /// the overlay on activation, or to sync with real cursor manually).
-    func setAim(_ point: CGPoint) {
-        aimPosition = point
-        if let cb = onAimChanged {
-            MainActor.assumeIsolated { cb(point) }
-        }
-    }
-
     // MARK: - Movement timer
 
     private func startTimerIfNeeded() {
@@ -355,7 +260,6 @@ final class MouseController: @unchecked Sendable {
         tickAccumX = 0
         tickAccumY = 0
         movementStartedAt = nil
-        // Keep aimPosition — user might click after stopping movement.
     }
 
     private func tick() {
@@ -385,23 +289,19 @@ final class MouseController: @unchecked Sendable {
         tickAccumY -= moveY
         if moveX == 0 && moveY == 0 { return }
 
-        let current = aimPosition ?? realCursorPosition()
+        let current = realCursorPosition()
         let next = CGPoint(x: current.x + moveX, y: current.y + moveY)
         let clamped = clampToDisplays(next, current: current)
-        aimPosition = clamped
-        // Tick fires on DispatchSource main queue → safe to call MainActor closure.
-        if let cb = onAimChanged {
-            MainActor.assumeIsolated { cb(clamped) }
-        }
-        // While dragging, real cursor MUST follow the aim and we must post
-        // `mouseDragged` every tick — apps render selection rectangles based
-        // on this stream, not on raw cursor position. Without per-tick events,
-        // text editors / Finder won't draw the selection.
+
+        // Warp the real cursor every tick. CGWarpMouseCursorPosition generates
+        // a mouseMoved event automatically; apps see the cursor move smoothly.
+        CGWarpMouseCursorPosition(clamped)
+
+        // During drag, an explicit leftMouseDragged event must follow each
+        // position update — apps render selection rectangles from this stream.
         if isDragging {
-            CGWarpMouseCursorPosition(clamped)
             postMouseEvent(.leftMouseDragged, at: clamped, button: .left, clickCount: 1)
         }
-        // (When NOT dragging, real cursor stays parked — overlay-only aiming.)
     }
 
     // MARK: - Position helpers
@@ -410,9 +310,11 @@ final class MouseController: @unchecked Sendable {
         // CGEvent path is preferred (matches the coord space used by every
         // other CGEvent call in this file). Fall back to NSEvent — which
         // also reports current cursor position — if CGEvent allocation fails.
-        // Falling back to .zero would silently warp the aim to the top-left.
+        // Falling back to .zero would silently warp the cursor to the top-left.
         if let p = CGEvent(source: nil)?.location { return p }
-        return realCursorPositionFromNSEvent()
+        let ns = NSEvent.mouseLocation
+        let primaryHeight = CGDisplayBounds(CGMainDisplayID()).height
+        return CGPoint(x: ns.x, y: primaryHeight - ns.y)
     }
 
     private func clampToDisplays(_ point: CGPoint, current: CGPoint) -> CGPoint {

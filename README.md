@@ -5,19 +5,18 @@ Keyboard-driven cursor control for macOS. Goal: drop the physical mouse as much 
 ## Features
 
 - **Activation**: `Cmd + ;` toggles mMouse mode (single press by default; configurable)
-- **Movement**: arrow keys move the aim (configurable — vim `h` `j` `k` `l` works if you set them)
+- **Direct cursor control**: arrow keys move the real system cursor — what you see is what gets clicked
 - **Click** *(hardcoded)*:
   - `Enter` → left click
   - `Enter × 2` (twice within 400ms) → double click
   - `Shift + Enter` → right click
-- **Scroll** *(hardcoded)*: `Shift + movement_key` → scroll wheel events at the aim
+- **Scroll** *(hardcoded)*: `Shift + movement_key` → scroll wheel events at the cursor
 - **Drag / block selection** *(hardcoded)*: `v` toggles drag mode (mouseDown), arrows drag, `v` / `Enter` commits mouseUp
 - **🔒 Full keyboard lockdown** while active: every key not listed above is consumed — no shortcut leaks to other apps
-- **System cursor hidden** while active (the floating aim overlay takes its place)
-- **Overlay rendered above popup menus** so right-click menu items are reachable
 - **Speed**: integer 1..10 (default 3); quadratic curve + acceleration on hold
+- **Speed boost**: hold `Cmd` (configurable) while moving → 5× speed
 - **Hot-reload** config — edit `~/.mMouse.json`, save, no restart
-- **Multi-monitor**: aim clamped to the active display
+- **Multi-monitor**: cursor clamped to the active display
 - Menu bar app (no Dock icon)
 
 ## Install (end users)
@@ -63,21 +62,16 @@ Menu bar:
 
 ### How it works in active mode
 
-- The **system cursor is hidden**. A small red `cursorarrow` overlay appears at the **current real-cursor position** (no jump to screen center) and that overlay becomes the "aim".
-- Arrows move the aim. The real cursor stays parked — so hover effects (tooltips, highlights) don't fire while you're positioning.
-- `Enter` warps the real cursor to the aim and posts a left click. The overlay flashes blue (`cursorarrow.rays`) for ~150ms as confirmation.
-- The overlay is rendered above popup menus, so after `Shift + Enter` opens a right-click menu you can still see the aim and navigate to menu items.
-
-### Sticky mode
-
-After clicking, mMouse stays active. The cursor stays where it is and you can keep moving / clicking / scrolling. To exit, press the activation combo again or `Esc`.
+- The **real system cursor** is what moves. Arrow keys warp it; the cursor you see is the cursor that will click. No floating overlay, no aim icon.
+- `Enter` posts a left click at the cursor's current position.
+- `Shift + Enter` opens a context menu where the cursor is.
+- After clicking, mMouse stays active — keep moving / clicking / scrolling. Press the activation combo or `Esc` to exit.
 
 ### Drag (block selection)
 
-- Press `v` to start drag (mouseDown at the aim).
-- The overlay **hides** and the system cursor **reappears** — apps need to see the cursor move to draw selection rectangles.
-- Arrows now drag (warp + `mouseDragged` posted each tick).
-- `Shift + arrow` is still drag-move inside drag mode (NOT scroll). Shift passes through to the app, so e.g. Shift+drag to extend a text-editor selection still works.
+- Press `v` to start drag (mouseDown at the current cursor).
+- Arrow keys move the cursor and post `mouseDragged` events each tick, so apps render the selection rectangle.
+- `Shift + arrow` inside drag mode is still drag-move (NOT scroll). Shift passes through to the app, so e.g. Shift+drag to extend a text-editor selection still works.
 - Press `v` again, `Enter`, or `Esc` to commit the `mouseUp`.
 
 ### Why lock down every key?
@@ -176,6 +170,7 @@ Per-tick = `0.5 × speed²` px at 60 Hz baseline, modulated by an acceleration c
 - For multi-tap combos (`repeatCount > 1`), the first press is **always suppressed** (we don't know yet if it's the start of a sequence). If the follow-ups don't arrive within `windowMs`, the press is dropped. Single-press combos (`repeatCount: 1`, the default) don't have this trade-off.
 - While active: **every key** is locked except movement / Shift+movement / Enter / Shift+Enter / `v` / `Esc` / activation. Cmd+Tab, Cmd+Q, typing — all consumed.
 - Click does not auto-exit the mode — press the activation combo again or `Esc` to leave.
+- Because the real cursor moves while you aim, hover effects (tooltips, link previews, button highlights) will fire just like with a physical mouse. This is intentional: you see exactly what the click will hit.
 - The activation, movement, and click handlers **cannot share keys**. mMouse warns and disarms the offender at config-load time.
 
 ## Stable signing cert (developer)
@@ -222,9 +217,6 @@ make tcc-reset
 open /Applications/mMouse.app   # start fresh
 ```
 
-### Other apps' right-click menus look weird / aim icon missing
-The aim overlay is rendered above `kCGPopUpMenuWindowLevel`. Expected behavior: you should always see the small red aim arrow on top of context menus. If you don't, the panel may have failed to elevate — file an issue with macOS version.
-
 ## Build targets
 
 ```bash
@@ -244,17 +236,14 @@ make reinstall     # tcc-reset + install
 ```
 AppDelegate (@main)
   ├── ConfigManager       — load/save/watch ~/.mMouse.json (file-level fswatch)
-  ├── MouseController     — CGEvent post (move/click/scroll/drag), sub-pixel
-  │                         accumulator, multi-monitor clamp, aim state
-  ├── CursorOverlay       — floating NSPanel above popup menus, pre-rendered
-  │                         SF Symbols (idle / click-flash / drag-mode)
+  ├── MouseController     — CGEvent post (move/click/scroll/drag) directly
+  │                         on the real cursor, sub-pixel accumulator,
+  │                         multi-monitor clamp, acceleration curve
   ├── EventTapManager     — CGEventTap + activation state machine + key
-  │                         lockdown + cursor hide/show + drag mode
+  │                         lockdown + drag mode toggle
   └── MenuBarManager      — NSStatusItem
 ```
 
 CGEventTap config: `.cgSessionEventTap` + `.headInsertEventTap` + `.defaultTap`. Not sandboxed (required for `.defaultTap` to consume events). Callback runs on the main RunLoop — all mutable state is touched only on main, no locks.
 
-Cursor hide/show uses `CGDisplayHideCursor` / `CGDisplayShowCursor`, reference counted and balanced 1:1. Multiple safety nets restore the cursor on terminate / deinit / drag-end / tap recreate so you can never end up stuck cursorless.
-
-The aim overlay panel sits one level above `kCGPopUpMenuWindowLevel` so it stays visible over right-click menus.
+Cursor movement is direct: each movement tick calls `CGWarpMouseCursorPosition` (which generates a `mouseMoved` event automatically). Clicks / drags / scrolls are dispatched at the current cursor position read via `CGEvent(source:nil)?.location` (with a `NSEvent.mouseLocation` fallback).

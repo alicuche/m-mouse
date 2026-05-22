@@ -24,7 +24,6 @@ private let relevantModifierMask: CGEventFlags = [
     .maskCommand, .maskAlternate, .maskControl, .maskShift,
 ]
 
-/// Pre-typed key candidates we treat as "Enter" for clicks.
 /// Activation/lockdown invariants assume the CGEventTap callback runs on the
 /// MAIN thread (the source is added to `CFRunLoopGetMain()`). All mutable state
 /// in this class is touched only from main and is therefore race-free without
@@ -60,37 +59,24 @@ final class EventTapManager: @unchecked Sendable {
             // Order matters: clear our keycode bookkeeping FIRST, then ask
             // MouseController to stop its timers — otherwise a keyUp event
             // dispatched on the same main RunLoop between the two could see
-            // a stale entry. After cleanup, restore the active-mode cursor-
-            // hidden invariant (drag exit shows the cursor; we want it hidden
-            // again because active mode persists).
+            // a stale entry.
             if isActive {
                 cleanupDragIfNeeded()
                 heldMovement.removeAll()
                 heldScroll.removeAll()
                 mouseController.releaseAll()
                 mouseController.stopScroll()
-                hideSystemCursor()
             }
             rebuildKeyTables()
         }
     }
 
     private let mouseController: MouseController
-    private let overlay: CursorOverlay
 
-    init(config: AppConfig, mouseController: MouseController, overlay: CursorOverlay) {
+    init(config: AppConfig, mouseController: MouseController) {
         self.config = config
         self.mouseController = mouseController
-        self.overlay = overlay
         rebuildKeyTables()
-        // Wire mouse controller aim updates → overlay position.
-        // onAimChanged is typed @MainActor; closure inherits isolation.
-        mouseController.onAimChanged = { [weak overlay] point in
-            overlay?.move(to: point)
-        }
-        mouseController.onClickCommit = { [weak overlay] in
-            overlay?.flashClick()
-        }
     }
 
     deinit {
@@ -98,12 +84,6 @@ final class EventTapManager: @unchecked Sendable {
         healthTimer?.cancel()
         if let obs = wakeObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(obs)
-        }
-        // Last-resort balance: if we still owe a Show (e.g. app being torn
-        // down while active), restore cursor so user isn't stuck cursorless.
-        // CGDisplayShowCursor is safe on any thread.
-        if cursorHiddenByUs {
-            CGDisplayShowCursor(CGMainDisplayID())
         }
     }
 
@@ -214,7 +194,7 @@ final class EventTapManager: @unchecked Sendable {
         }
     }
 
-    // MARK: - Hardcoded click keys
+    // MARK: - Hardcoded click / control keys
 
     private let enterKeyCode: CGKeyCode = CGKeyCode(kVK_Return)
     private let keypadEnterKeyCode: CGKeyCode = CGKeyCode(kVK_ANSI_KeypadEnter)
@@ -366,28 +346,15 @@ final class EventTapManager: @unchecked Sendable {
 
     private func toggleActivation() {
         isActive.toggle()
-        if isActive {
-            // Aim starts at the current real cursor position — wherever the
-            // user was already looking. Real mouse cursor is NOT moved; the
-            // overlay simply appears on top of it, then the system cursor is
-            // hidden so the user only sees the overlay from here on.
-            mouseController.setAimToRealCursor()
-            if let aim = mouseController.currentAim {
-                MainActor.assumeIsolated { overlay.show(at: aim) }
-            }
-            hideSystemCursor()
-        } else {
+        if !isActive {
             // If still dragging when deactivating, commit the mouseUp first
             // so apps don't get stuck with a pending button-down event.
             if mouseController.isDragging {
                 mouseController.endDrag()
-                MainActor.assumeIsolated { overlay.setDragMode(false) }
             }
             mouseController.releaseAll()
             heldMovement.removeAll()
             mouseController.setBoost(1.0)
-            MainActor.assumeIsolated { overlay.hide() }
-            showSystemCursor()
         }
         enterClickCount = 0
         enterClickResetWork?.cancel()
@@ -402,18 +369,11 @@ final class EventTapManager: @unchecked Sendable {
     private func enterDragMode() {
         guard !mouseController.isDragging else { return }
         mouseController.startDrag()
-        MainActor.assumeIsolated { overlay.setDragMode(true) }
-        // Cursor must be visible during drag so the user sees the selection
-        // rectangle / drag image apps render.
-        showSystemCursor()
     }
 
     private func exitDragMode() {
         guard mouseController.isDragging else { return }
         mouseController.endDrag()
-        MainActor.assumeIsolated { overlay.setDragMode(false) }
-        // Active mode continues — re-hide cursor.
-        if isActive { hideSystemCursor() }
     }
 
     /// Safety net for code paths that destroy or rebuild the tap (sleep/wake,
@@ -423,42 +383,6 @@ final class EventTapManager: @unchecked Sendable {
     private func cleanupDragIfNeeded() {
         guard mouseController.isDragging else { return }
         mouseController.endDrag()
-        MainActor.assumeIsolated { overlay.setDragMode(false) }
-        // Don't touch cursor visibility here — caller owns that decision based
-        // on the broader transition (deactivate vs reload-while-active).
-    }
-
-    // MARK: - System cursor hide/show
-    //
-    // CGDisplayHideCursor is reference-counted: every Hide must be balanced by
-    // exactly one Show or the cursor disappears system-wide until logout.
-    // `cursorHiddenByUs` enforces 1:1 calls regardless of how toggleActivation
-    // is invoked (callback, menu, panic Esc, app-quit cleanup).
-    //
-    // Note on accessory apps: Apple docs say CGDisplayHideCursor only takes
-    // effect while the calling app is active. In practice, a process trusted
-    // for Accessibility can hide the cursor even when not frontmost on recent
-    // macOS versions. If the cursor still shows in some app foregrounds, the
-    // overlay still gives visual aim feedback — primary functionality intact.
-
-    private var cursorHiddenByUs = false
-
-    private func hideSystemCursor() {
-        guard !cursorHiddenByUs else { return }
-        CGDisplayHideCursor(CGMainDisplayID())
-        cursorHiddenByUs = true
-    }
-
-    private func showSystemCursor() {
-        guard cursorHiddenByUs else { return }
-        CGDisplayShowCursor(CGMainDisplayID())
-        cursorHiddenByUs = false
-    }
-
-    /// Called from AppDelegate.applicationWillTerminate. Without this, an
-    /// app crash/quit while active leaves the cursor invisible until logout.
-    func ensureCursorVisibleForShutdown() {
-        showSystemCursor()
     }
 
     private func updateBoostFromFlags(_ flags: CGEventFlags) {
@@ -561,7 +485,6 @@ final class EventTapManager: @unchecked Sendable {
         // --- ACTIVE MODE: full keyboard lockdown ---
 
         // Hardcoded panic deactivate: Esc always exits active mode.
-        // Safety net if Cmd+J+J state machine ever wedges.
         // (toggleActivation handles ending an in-progress drag automatically.)
         if keyCode == escapeKeyCode {
             if type == .keyDown && !isRepeat {
@@ -594,7 +517,7 @@ final class EventTapManager: @unchecked Sendable {
                 releaseMovementOrScroll(keyCode: keyCode)
                 return nil
             }
-            // keyDown: Shift + movement = SCROLL at aim position — UNLESS we're
+            // keyDown: Shift + movement = SCROLL at cursor — UNLESS we're
             // dragging, in which case Shift is left for the app (e.g. Shift+drag
             // to extend a selection) and the arrow continues drag-move.
             if flags.contains(.maskShift) && !mouseController.isDragging {
