@@ -4,84 +4,85 @@ Keyboard-driven cursor control for macOS. Goal: drop the physical mouse as much 
 
 ## Features
 
-- **Activation sequence**: press `Cmd + ;` to toggle mMouse mode (single press by default; configurable)
-- **Movement**: arrow keys (configurable — vim-style `h` `j` `k` `l` also works if you set them)
-- **Click** *(hardcoded, not configurable)*:
+- **Activation**: `Cmd + ;` toggles mMouse mode (single press by default; configurable)
+- **Movement**: arrow keys move the aim (configurable — vim `h` `j` `k` `l` works if you set them)
+- **Click** *(hardcoded)*:
   - `Enter` → left click
   - `Enter × 2` (twice within 400ms) → double click
   - `Shift + Enter` → right click
-- **Scroll**: `Shift + movement_key` → scroll up/down/left/right at the aim position
-- **Drag (block selection)**: `v` toggle → hold mouseDown at aim, move with arrows to select, press `v` again or `Enter` to commit mouseUp
-- **🔒 Full keyboard lockdown** while active: every key that isn't movement / Enter / Shift+movement / `v` / activation combo is consumed — no shortcut leaks to other apps
-- **Speed**: single integer 1..10 (1 = slow, 10 = fast)
-- **Hot-reload** config when `~/.mMouse.json` changes
-- **Multi-monitor**: cursor clamped to the active display
+- **Scroll** *(hardcoded)*: `Shift + movement_key` → scroll wheel events at the aim
+- **Drag / block selection** *(hardcoded)*: `v` toggles drag mode (mouseDown), arrows drag, `v` / `Enter` commits mouseUp
+- **🔒 Full keyboard lockdown** while active: every key not listed above is consumed — no shortcut leaks to other apps
+- **System cursor hidden** while active (the floating aim overlay takes its place)
+- **Overlay rendered above popup menus** so right-click menu items are reachable
+- **Speed**: integer 1..10 (default 3); quadratic curve + acceleration on hold
+- **Hot-reload** config — edit `~/.mMouse.json`, save, no restart
+- **Multi-monitor**: aim clamped to the active display
 - Menu bar app (no Dock icon)
 
-## Build
+## Install (end users)
 
 ```bash
-make setup-cert   # RUN ONCE: create a stable signing cert (see section below)
-make bundle       # build release + assemble .app
-make install      # copy to /Applications/ (quits any running instance)
-make run          # build and open the app from .build/
-```
-
-Requirements: Xcode Command Line Tools (Swift 5.9+), `openssl` (bundled with macOS), and macOS 13+.
-
-## Standard setup (one time)
-
-```bash
-make setup-cert   # create the "mMouse Signing" cert in the login keychain
-make install      # build + install to /Applications
+make install                # build release + install to /Applications
 open /Applications/mMouse.app
 ```
 
-First launch:
-1. The app shows an alert requesting Accessibility → click **Open System Settings**.
-2. Enable the toggle for `mMouse` under **Privacy & Security → Accessibility**.
-3. The app **relaunches itself** automatically once the permission is detected → tap is live.
+Requirements: Xcode Command Line Tools (Swift 5.9+) and macOS 13+.
 
-> 🔑 **Why a stable cert?**
->
-> macOS TCC (the permissions system) binds a granted permission to the **code identity** of the binary. An ad-hoc signed app (`codesign --sign -`) gets a new identity on every codesign run → the previous grant becomes invalid → you have to grant again on every rebuild.
->
-> A stable self-signed cert (`make setup-cert`) gives you a stable identity → grant once, keep it.
+First launch:
+1. Alert pops asking for Accessibility → click **Open System Settings**.
+2. Toggle on `mMouse` under **Privacy & Security → Accessibility**.
+3. App **relaunches itself** once it detects the grant → ready to use.
+
+> The default install signs with an ad-hoc identity. The app works perfectly, but a **rebuild** creates a new code identity and macOS re-prompts for the Accessibility grant. If that bothers you, see [Stable signing cert (developer)](#stable-signing-cert-developer) below.
 
 ## Usage
 
 | Action | Keys |
 |---|---|
-| **Enable mMouse** | `Cmd + ;` |
-| **Disable mMouse** (manual) | `Cmd + ;` or `Esc` |
+| **Enable / disable mMouse** | `Cmd + ;` |
 | Up | `↑` |
 | Down | `↓` |
 | Left | `←` |
 | Right | `→` |
-| Left click | `Enter` (mode stays active — keep interacting) |
+| Left click | `Enter` (mode stays active) |
 | Double click | `Enter × 2` (within 400ms) |
 | Right click | `Shift + Enter` |
 | Scroll up | `Shift + ↑` (hold for continuous scroll) |
 | Scroll down | `Shift + ↓` |
 | Scroll left | `Shift + ←` |
 | Scroll right | `Shift + →` |
-| **Drag start / end (block selection)** | `v` (vim visual mode) |
+| **Drag start / end** | `v` |
 | End drag (alt) | `Enter` |
-| **Panic exit** (escape hatch when stuck) | `Esc` (auto-commits an in-progress drag) |
-
-> 💡 **Sticky active mode**: mMouse does **not** auto-deactivate after a click — the cursor stays where it is and you can keep moving / clicking / scrolling. To exit, use the activation combo again or `Esc`.
-
-> 📜 **Scroll**: hold `Shift + arrow` → posts a scroll wheel event at the aim position. The real cursor warps to the aim before scrolling (so the event lands on the window under the aim). Hold ramp-up: 0.1s → 1×, 0.5s → 3×.
-
-> 🎯 **Drag (block selection)**: press `v` to start drag (mouseDown at the aim). The overlay hides — the **system cursor reappears** so you can see the selection rectangle apps draw. Move with arrows to drag. Press `v` again, `Enter`, or `Esc` to commit the mouseUp. Inside drag mode, `Shift + arrow` is still drag-move (not scroll) — Shift is passed through to the app so things like Shift+drag to extend a selection in a text editor work as expected.
+| Speed boost (5× by default) | hold `Cmd` while moving |
+| **Panic exit** | `Esc` (auto-commits drag if in progress) |
 
 Menu bar:
 - `⚪ mM` — inactive (typing works normally)
 - `🟢 mM` — active (every other key is locked; only the keys above do anything)
 
+### How it works in active mode
+
+- The **system cursor is hidden**. A small red `cursorarrow` overlay appears at the **current real-cursor position** (no jump to screen center) and that overlay becomes the "aim".
+- Arrows move the aim. The real cursor stays parked — so hover effects (tooltips, highlights) don't fire while you're positioning.
+- `Enter` warps the real cursor to the aim and posts a left click. The overlay flashes blue (`cursorarrow.rays`) for ~150ms as confirmation.
+- The overlay is rendered above popup menus, so after `Shift + Enter` opens a right-click menu you can still see the aim and navigate to menu items.
+
+### Sticky mode
+
+After clicking, mMouse stays active. The cursor stays where it is and you can keep moving / clicking / scrolling. To exit, press the activation combo again or `Esc`.
+
+### Drag (block selection)
+
+- Press `v` to start drag (mouseDown at the aim).
+- The overlay **hides** and the system cursor **reappears** — apps need to see the cursor move to draw selection rectangles.
+- Arrows now drag (warp + `mouseDragged` posted each tick).
+- `Shift + arrow` is still drag-move inside drag mode (NOT scroll). Shift passes through to the app, so e.g. Shift+drag to extend a text-editor selection still works.
+- Press `v` again, `Enter`, or `Esc` to commit the `mouseUp`.
+
 ### Why lock down every key?
 
-To **prevent conflicts** with other apps' shortcuts. Example: if you accidentally press `w` while active and we didn't lock keys, Cmd+W (if Cmd happens to be held) would close a tab. Lockdown guarantees active mode is **pure mouse mode** — nothing else leaks through.
+To **prevent conflicts** with other apps' shortcuts. If we didn't lock keys and you accidentally pressed `w` while Cmd happened to be held, Cmd+W would close a tab. Lockdown guarantees active mode is **pure mouse mode**.
 
 Want to type → deactivate first (`Cmd+;`).
 
@@ -107,63 +108,53 @@ File: `~/.mMouse.json` (created on first launch).
 }
 ```
 
+> `speedBoost` is also configurable but omitted from the default JSON (defaults to `{ modifier: "command", multiplier: 5 }`). Add it to override.
+
 ### Parameters
 
 | Field | Meaning | Value |
 |---|---|---|
-| `activationCombo.modifier` | Modifier held while entering the combo. Supports **combo modifiers** with `+` (e.g. `"command+shift"`) | `command` \| `control` \| `option` \| `shift` \| `none` \| or a combo like `"a+b"` |
-| `activationCombo.key` | The main key of the combo | `a-z`, `0-9`, or a named key (`space`, `tab`, `f1`...`f12`, `escape`, ...) |
-| `activationCombo.repeatCount` | How many times the main key must be pressed (e.g. 2 = double-tap) | int ≥ 1 |
-| `activationCombo.windowMs` | Max milliseconds between presses | ms |
-| `keys.up/down/left/right` | Movement keys | key name (e.g. `"up"`, `"down"`, `"k"`, `"j"`...) |
-| `speed` | Movement speed | **int 1..10** (see table below) |
-| `speedBoost.modifier` | Modifier held with a movement key to boost speed | modifier name (e.g. `"command"`, `"option"`, `"command+shift"`) |
-| `speedBoost.multiplier` | Speed multiplier while the boost modifier is held | number (default `5`) |
+| `activationCombo.modifier` | Modifier held while entering the combo. Supports **combos** with `+` (e.g. `"command+shift"`) | `command` \| `control` \| `option` \| `shift` \| `none` \| or a combo |
+| `activationCombo.key` | The main key | `a-z`, `0-9`, named key (`space`, `tab`, `f1`...`f12`, `escape`, arrow names, `;`, `,`, ...) |
+| `activationCombo.repeatCount` | How many times the main key must be pressed | int ≥ 1 (default `1`) |
+| `activationCombo.windowMs` | Max ms between presses (only used when `repeatCount > 1`) | int 50..5000 |
+| `keys.up/down/left/right` | Movement keys | key name (e.g. `"up"`, `"k"`) |
+| `speed` | Movement speed | **int 1..10** |
+| `speedBoost.modifier` | Modifier that boosts movement speed | modifier name |
+| `speedBoost.multiplier` | Speed multiplier while boost modifier held | number (default `5`) |
 
-### Speed cheat sheet (quadratic curve + acceleration)
+> **Hardcoded** (not configurable): `Enter` / `Shift+Enter` (click), `v` (drag toggle), `Esc` (panic exit), `Shift + movement` (scroll). The movement keys must NOT collide with `v` or `Enter` — mMouse warns and disarms the colliding direction if you try.
 
-| Speed | Tap (~50ms) | Hold 1s | Use case |
+### Speed cheat sheet
+
+Per-tick = `0.5 × speed²` px at 60 Hz baseline, modulated by an acceleration curve (tap stays slow, hold ramps to 2.5× after 400ms).
+
+| Speed | Tap (~50ms) | Hold ~1s | Use case |
 |---|---|---|---|
-| 1 | ~1 px | ~80 px | Pixel-perfect precision |
-| 3 (default) | ~4 px | ~340 px | Text-cursor-like, precise UI |
-| 5 | ~12 px | ~940 px | General use |
-| 7 | ~25 px | ~1800 px | Big screens |
-| 10 | ~50 px | ~3750 px | Fastest crossing |
+| 1 | ~1 px | ~50 px | Pixel-perfect precision |
+| 3 (default) | ~4 px | ~400 px | Precise UI |
+| 5 | ~10 px | ~1100 px | General use |
+| 7 | ~20 px | ~2000 px | Big screens |
+| 10 | ~50 px | ~4500 px | Fastest crossing |
 
-**Acceleration**: a quick tap moves only a little (0.3×), holding the key ramps up to 2.5× after 400ms. Feels like a real mouse — tap to fine-tune, hold for long traversals.
+**Speed boost** (default `Cmd`): hold the boost modifier + arrow → speed × 5 (configurable). Use it to cross the screen quickly without changing the base speed.
 
-**Speed boost** (default Cmd): hold Cmd + arrow → speed × 5 (configurable via `speedBoost.multiplier`). Lets you cross the screen quickly without changing the base speed in config.
-
-**Start where you are**: on activate, the **aim overlay** (a small cursorarrow icon) appears at the **current real cursor position** — no jarring jump to screen center. From there, arrows move the aim.
-
-### Cursor overlay mode
-
-While active, mMouse **does not move the real cursor** (the system cursor stays parked where it was). Instead a **floating icon** (the "aim") moves with the keys.
-
-- Movement keys (arrows) → move the aim icon
-- `Enter` / `Shift+Enter` → real cursor **warps to the aim position** and clicks immediately
-
-Benefits:
-- The aim does not trigger hover effects (tooltips, highlights) while you're positioning
-- Clear visual feedback — you always know where the cursor will land
-- "Snap" clicks feel more precise
-
-Edit the file → save → mMouse reloads automatically, no restart needed.
-
-### Example: activate with `Cmd + Shift + →` (single press)
+### Example: activate with `Option + Space` (single press)
 
 ```json
 "activationCombo": {
-  "modifier": "command+shift",
-  "key": "right",
+  "modifier": "option",
+  "key": "space",
   "repeatCount": 1,
   "windowMs": 500
 }
 ```
 
-> ⚠️ `repeatCount: 1` means **a single press activates immediately**. Safer to use `repeatCount: 2` (double-tap) if your combo overlaps with another app's shortcut.
+> ⚠️ `repeatCount: 1` means **a single press activates immediately**. If you're worried about clashing with another app's shortcut, use `repeatCount: 2` for a double-tap.
 
-### Other combo examples
+> ⚠️ Avoid combos macOS already uses (e.g. `Cmd+Shift+arrow` = Move to Desktop, `Cmd+Tab` = app switcher). The event tap consumes the combo so you'd lose the system function while mMouse is running.
+
+### Modifier combo syntax
 
 ```json
 "modifier": "command"           // 1 modifier
@@ -172,68 +163,98 @@ Edit the file → save → mMouse reloads automatically, no restart needed.
 "modifier": "none"              // no modifier required (risky)
 ```
 
-> Click keys (Enter / Shift+Enter) are **hardcoded** — they are not in the config.
-
 ## Menu bar items
 
 - **Activate / Deactivate** — manual toggle
-- **Open Config** — open `~/.mMouse.json`
+- **Open Config** — open `~/.mMouse.json` in your default JSON editor
 - **Reload Config** — force reload
 - **Reveal in Finder** — show the config file in Finder
 - **Quit mMouse**
 
-## Trade-offs to be aware of
+## Trade-offs
 
-- For multi-tap combos (`repeatCount > 1`), the first press is **always suppressed**. If the follow-up presses don't arrive within `windowMs`, that first press is dropped (it never reaches the app underneath). Single-press combos (`repeatCount: 1`, the default) don't have this trade-off.
-- While active: **every key** is locked except the movement keys / Shift+movement / Enter / Shift+Enter / `v` / activation. Cmd+Tab, Cmd+Q, typing — all consumed.
+- For multi-tap combos (`repeatCount > 1`), the first press is **always suppressed** (we don't know yet if it's the start of a sequence). If the follow-ups don't arrive within `windowMs`, the press is dropped. Single-press combos (`repeatCount: 1`, the default) don't have this trade-off.
+- While active: **every key** is locked except movement / Shift+movement / Enter / Shift+Enter / `v` / `Esc` / activation. Cmd+Tab, Cmd+Q, typing — all consumed.
 - Click does not auto-exit the mode — press the activation combo again or `Esc` to leave.
+- The activation, movement, and click handlers **cannot share keys**. mMouse warns and disarms the offender at config-load time.
 
-## Troubleshooting
+## Stable signing cert (developer)
 
-### App prompts for permission every time it launches
-
-This is the ad-hoc TCC problem. Permanent fix:
+If you rebuild often, ad-hoc signing means re-granting Accessibility every install. Create a stable self-signed cert once and you never grant again:
 
 ```bash
-make setup-cert        # create a stable cert (run once)
-make tcc-reset         # clear stale TCC entries for mMouse
-make install           # rebuild + reinstall with the new cert
+make setup-cert        # one-time: create "mMouse Signing" cert in login keychain
+make tcc-reset         # clear stale TCC entries for old ad-hoc identities
+make install           # rebuild with the stable cert
 open /Applications/mMouse.app
-# Grant permission again — this time it persists.
+# Grant permission once — persists across all subsequent rebuilds.
 ```
 
 Recovery one-liner: `make reinstall` (= `tcc-reset` + `install`).
 
-Check the current signing identity:
+Verify the installed bundle is signed with the stable cert:
 ```bash
 make sign-info
 ```
-Expected output: `Authority=mMouse Signing` (not `Signature=adhoc`).
+Expected: `Authority=mMouse Signing` (not `Signature=adhoc`).
+
+> macOS TCC binds a granted permission to the **code identity** of the binary. Ad-hoc sign produces a new identity per build → grant invalidated → re-prompt. A stable cert keeps the identity constant.
+
+## Troubleshooting
+
+### App prompts for permission every install
+
+You're using ad-hoc signing. Either accept the re-grant, or set up the stable cert (see above).
 
 ### Tap disabled by secure input
-While typing a sudo password in Terminal, macOS auto-disables event taps. mMouse re-enables itself once secure input is released.
+While typing a sudo password in Terminal, macOS auto-disables all event taps. mMouse re-enables itself once secure input is released (health timer + inline retry).
 
 ### Tap dies after sleep/wake
-mMouse listens for `NSWorkspace.didWakeNotification` and recreates the tap. If it still doesn't work → menu bar → **Quit** → reopen.
+mMouse listens for `NSWorkspace.didWakeNotification` and recreates the tap automatically. If it still doesn't work → menu bar → **Quit** → reopen.
 
 ### Stuck in active mode (activated but can't type)
-Press `Cmd+;` (or whatever activation combo you set) to deactivate. Or click the menu bar `🟢 mM` → **Deactivate** (the physical mouse still works either way).
+Press `Esc` (or whatever your activation combo is) to deactivate. Or click the menu bar `🟢 mM` → **Deactivate** — the physical mouse still works for this even while active.
 
-### After granting permission, the alert still appears
-The app relaunches itself once the permission is detected. If it still loops:
+### After granting permission the alert keeps appearing
+The app self-relaunches when it detects the grant. If it loops:
 ```bash
 make tcc-reset
 open /Applications/mMouse.app   # start fresh
+```
+
+### Other apps' right-click menus look weird / aim icon missing
+The aim overlay is rendered above `kCGPopUpMenuWindowLevel`. Expected behavior: you should always see the small red aim arrow on top of context menus. If you don't, the panel may have failed to elevate — file an issue with macOS version.
+
+## Build targets
+
+```bash
+make build         # swift build -c release (no bundle)
+make bundle        # release build + .app bundle in .build/
+make install       # bundle + copy to /Applications/ (quits running instance)
+make run           # bundle + open from .build/
+make clean         # rm .build, swift package clean
+make sign-info     # show signing identity of installed/bundled .app
+make setup-cert    # one-time: create stable signing cert
+make tcc-reset     # clear TCC Accessibility entry for mMouse
+make reinstall     # tcc-reset + install
 ```
 
 ## Architecture
 
 ```
 AppDelegate (@main)
-  ├── ConfigManager       — load/save/watch ~/.mMouse.json
-  ├── MouseController     — CGEvent post, sub-pixel accumulator, multi-monitor clamp
-  ├── EventTapManager     — CGEventTap + sequence state machine + lockdown
+  ├── ConfigManager       — load/save/watch ~/.mMouse.json (file-level fswatch)
+  ├── MouseController     — CGEvent post (move/click/scroll/drag), sub-pixel
+  │                         accumulator, multi-monitor clamp, aim state
+  ├── CursorOverlay       — floating NSPanel above popup menus, pre-rendered
+  │                         SF Symbols (idle / click-flash / drag-mode)
+  ├── EventTapManager     — CGEventTap + activation state machine + key
+  │                         lockdown + cursor hide/show + drag mode
   └── MenuBarManager      — NSStatusItem
 ```
 
-CGEventTap: `.cgSessionEventTap` + `.headInsertEventTap` + `.defaultTap`. Not sandboxed (required for `.defaultTap` to consume events).
+CGEventTap config: `.cgSessionEventTap` + `.headInsertEventTap` + `.defaultTap`. Not sandboxed (required for `.defaultTap` to consume events). Callback runs on the main RunLoop — all mutable state is touched only on main, no locks.
+
+Cursor hide/show uses `CGDisplayHideCursor` / `CGDisplayShowCursor`, reference counted and balanced 1:1. Multiple safety nets restore the cursor on terminate / deinit / drag-end / tap recreate so you can never end up stuck cursorless.
+
+The aim overlay panel sits one level above `kCGPopUpMenuWindowLevel` so it stays visible over right-click menus.
