@@ -98,11 +98,21 @@ File: `~/.mMouse.json` (created on first launch).
     "left": "left",
     "right": "right"
   },
-  "speed": 3
+  "speed": 3,
+  "passthrough": [
+    { "modifier": "command", "key": "c" },
+    { "modifier": "command", "key": "v" },
+    { "modifier": "command", "key": "x" },
+    { "modifier": "command", "key": "a" },
+    { "modifier": "command", "key": "z" },
+    { "modifier": "command", "key": "tab" }
+  ]
 }
 ```
 
 > `speedBoost` is also configurable but omitted from the default JSON (defaults to `{ modifier: "command", multiplier: 5 }`). Add it to override.
+
+> `passthrough` is the **whitelist of shortcuts allowed to leak through to the foreground app even while mMouse is active**. The default list covers clipboard, undo, and app switcher (Cmd+C/V/X/A/Z/Tab). Add your own entries — e.g. `{ "modifier": "command", "key": "s" }` to keep Save working in active mode. Set `"passthrough": []` to lock down every non-mMouse key (the original v1 behavior).
 
 ### Parameters
 
@@ -116,6 +126,7 @@ File: `~/.mMouse.json` (created on first launch).
 | `speed` | Movement speed | **int 1..10** |
 | `speedBoost.modifier` | Modifier that boosts movement speed | modifier name |
 | `speedBoost.multiplier` | Speed multiplier while boost modifier held | number (default `5`) |
+| `passthrough` | Array of `{modifier, key}` combos that pass through to the foreground app in active mode | array (default = Cmd+C/V/X/A/Z); `[]` = lock down everything |
 
 > **Hardcoded** (not configurable): `Enter` / `Shift+Enter` (click), `v` (drag toggle), `Esc` (panic exit), `Shift + movement` (scroll). The movement keys must NOT collide with `v` or `Enter` — mMouse warns and disarms the colliding direction if you try.
 
