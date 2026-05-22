@@ -150,17 +150,24 @@ final class MouseController: @unchecked Sendable {
     private var activeScrollDirections: Set<Direction> = []
     private var scrollStartedAt: TimeInterval?
 
-    /// Lines per scroll tick (line-based scrolling — most apps map 1 line ≈ one
-    /// notch of a wheel mouse). Held longer = small acceleration ramp.
-    private let scrollTickRate: Double = 30 // 30 ticks/sec
-    private let scrollLinesPerTick: Int32 = 1
+    /// Pixels per scroll tick. We use pixel units (not line units) because
+    /// many modern apps — especially Electron/Chromium based ones — ignore or
+    /// poorly handle .line units. 8 px/tick × 60 ticks/sec = 480 px/s baseline.
+    private let scrollTickRate: Double = 60 // 60 ticks/sec, matches movement
+    private let scrollPixelsPerTick: Int32 = 8
 
     func pressScroll(_ direction: Direction) {
         if activeScrollDirections.isEmpty {
+            // Ensure aim exists — if scroll is the first action after activation
+            // (no movement yet), aim is set by centerAimOnCurrentDisplay; but
+            // guard against future code paths reaching here with nil aim so
+            // scroll never lands at a surprising real-cursor position.
+            if aimPosition == nil { centerAimOnCurrentDisplay() }
             // Warp real cursor to aim once — subsequent scrolls re-use that
             // position. Scroll events are dispatched at the cursor location.
-            _ = warpRealCursorToAim()
+            let pos = warpRealCursorToAim()
             scrollStartedAt = CACurrentMediaTime()
+            print("[mMouse] scroll start at (\(Int(pos.x)),\(Int(pos.y))) dir=\(direction)")
         }
         activeScrollDirections.insert(direction)
         startScrollTimerIfNeeded()
@@ -202,10 +209,13 @@ final class MouseController: @unchecked Sendable {
 
         var dy: Int32 = 0
         var dx: Int32 = 0
-        if activeScrollDirections.contains(.up)    { dy += scrollLinesPerTick * mult }
-        if activeScrollDirections.contains(.down)  { dy -= scrollLinesPerTick * mult }
-        if activeScrollDirections.contains(.right) { dx -= scrollLinesPerTick * mult }
-        if activeScrollDirections.contains(.left)  { dx += scrollLinesPerTick * mult }
+        // Sign convention (verified empirically on macOS):
+        // wheel1 positive → scroll up (view reveals content above)
+        // wheel2 positive → scroll left (view reveals content to the left)
+        if activeScrollDirections.contains(.up)    { dy += scrollPixelsPerTick * mult }
+        if activeScrollDirections.contains(.down)  { dy -= scrollPixelsPerTick * mult }
+        if activeScrollDirections.contains(.left)  { dx += scrollPixelsPerTick * mult }
+        if activeScrollDirections.contains(.right) { dx -= scrollPixelsPerTick * mult }
 
         postScrollEvent(deltaY: dy, deltaX: dx)
     }
@@ -220,17 +230,28 @@ final class MouseController: @unchecked Sendable {
     }
 
     private func postScrollEvent(deltaY: Int32, deltaX: Int32) {
-        // unit=.line → integer line count, matches normal wheel-mouse semantics
-        // (Smooth scroll apps still get reasonable values; coarse-grain apps
-        // like terminals scroll a line at a time as expected.)
+        // .pixel units are the most widely-supported scroll format across
+        // native AppKit, Electron, web browsers, and Terminal. .line units
+        // work in many native apps but silently no-op in some Electron apps.
+        //
+        // We post BOTH a wheelCount:2 pixel event (carries dx and dy) AND
+        // explicitly set the "fixed point" delta fields, which some apps
+        // (notably Chromium-based browsers) read instead of the wheel deltas.
+        let needsHorizontal = deltaX != 0
+        let wheelCount: UInt32 = needsHorizontal ? 2 : 1
         guard let event = CGEvent(
             scrollWheelEvent2Source: nil,
-            units: .line,
-            wheelCount: 2,
+            units: .pixel,
+            wheelCount: wheelCount,
             wheel1: deltaY,
             wheel2: deltaX,
             wheel3: 0
         ) else { return }
+        // Explicit fixed-point delta — some apps prefer these fields.
+        event.setIntegerValueField(.scrollWheelEventPointDeltaAxis1, value: Int64(deltaY))
+        if needsHorizontal {
+            event.setIntegerValueField(.scrollWheelEventPointDeltaAxis2, value: Int64(deltaX))
+        }
         event.post(tap: .cghidEventTap)
     }
 
@@ -243,7 +264,10 @@ final class MouseController: @unchecked Sendable {
     private func warpToAim() -> CGPoint {
         let target = aimPosition ?? realCursorPosition()
         CGWarpMouseCursorPosition(target)
-        if let cb = onClickCommit {
+        // Only flash the overlay when we have a real aim to flash AT —
+        // otherwise we'd flash at last known overlay position while the click
+        // actually happens at the real cursor, a confusing visual desync.
+        if aimPosition != nil, let cb = onClickCommit {
             MainActor.assumeIsolated { cb() }
         }
         return target

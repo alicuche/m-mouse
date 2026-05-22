@@ -62,9 +62,19 @@ enum KeyMapping {
         if trimmed.isEmpty || trimmed == "none" {
             return []
         }
+        // Reject leading/trailing/double "+" (e.g. "command+", "+shift", "a++b")
+        // — these usually indicate a config typo and silent acceptance hides it.
+        if trimmed.hasPrefix("+") || trimmed.hasSuffix("+") || trimmed.contains("++") {
+            return nil
+        }
         var combined: CGEventFlags = []
-        for part in trimmed.split(separator: "+") {
-            guard let flag = singleModifierFlag(for: String(part).trimmingCharacters(in: .whitespaces)) else {
+        var seen: Set<String> = []
+        for raw in trimmed.split(separator: "+") {
+            let part = String(raw).trimmingCharacters(in: .whitespaces)
+            // Reject duplicates ("command+command") and empty parts.
+            if part.isEmpty { return nil }
+            if !seen.insert(part).inserted { return nil }
+            guard let flag = singleModifierFlag(for: part) else {
                 return nil
             }
             combined.insert(flag)

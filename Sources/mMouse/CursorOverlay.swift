@@ -13,6 +13,19 @@ final class CursorOverlay {
     private let imageView: NSImageView
     private let size: CGFloat = 36
 
+    // Idle: red cursorarrow. Click commit: blue cursorarrow.rays for ~150ms.
+    private let idleSymbolName  = "cursorarrow"
+    private let clickSymbolName = "cursorarrow.rays"
+    private let idleTint: NSColor  = .systemRed
+    private let clickTint: NSColor = .systemBlue
+
+    private let idleImage:  NSImage?
+    private let clickImage: NSImage?
+
+    /// Monotonically incremented per flash so a delayed restore from an OLD
+    /// flash doesn't clobber a NEW one that started in the meantime.
+    private var flashGeneration: UInt64 = 0
+
     init() {
         let frame = NSRect(x: 0, y: 0, width: size, height: size)
         let panel = NSPanel(
@@ -35,15 +48,23 @@ final class CursorOverlay {
 
         let imageView = NSImageView(frame: frame)
         imageView.imageScaling = .scaleProportionallyUpOrDown
-        imageView.contentTintColor = .systemBlue
+
+        // Pre-render symbols (avoids per-flash NSImage construction).
         if #available(macOS 11.0, *) {
-            let symbol = NSImage(systemSymbolName: "scope", accessibilityDescription: "mMouse cursor")
-            let cfg = NSImage.SymbolConfiguration(pointSize: 28, weight: .semibold)
-            imageView.image = symbol?.withSymbolConfiguration(cfg)
+            let cfg = NSImage.SymbolConfiguration(pointSize: 26, weight: .bold)
+            self.idleImage  = NSImage(systemSymbolName: idleSymbolName,  accessibilityDescription: "mMouse aim")?
+                .withSymbolConfiguration(cfg)
+            self.clickImage = NSImage(systemSymbolName: clickSymbolName, accessibilityDescription: "mMouse click")?
+                .withSymbolConfiguration(cfg)
         } else {
-            // Fallback: draw a simple ring + dot
-            imageView.image = CursorOverlay.fallbackImage(size: size, tint: .systemBlue)
+            // Fallback for pre-Big Sur — same image both states, color flash only.
+            let fb = CursorOverlay.fallbackImage(size: size, tint: idleTint)
+            self.idleImage = fb
+            self.clickImage = fb
         }
+
+        imageView.image = self.idleImage
+        imageView.contentTintColor = idleTint
 
         container.addSubview(imageView)
         panel.contentView = container
@@ -54,11 +75,18 @@ final class CursorOverlay {
 
     /// Shows the overlay at the given screen position (CG coordinates, top-left origin).
     func show(at point: CGPoint) {
+        // Restore idle state on every show — covers the case where the user
+        // deactivated mid-flash and re-activated before restore fired.
+        flashGeneration &+= 1
+        imageView.image = idleImage
+        imageView.contentTintColor = idleTint
         move(to: point)
         panel.orderFrontRegardless()
     }
 
     func hide() {
+        // Invalidate any pending flash restore — overlay is gone.
+        flashGeneration &+= 1
         panel.orderOut(nil)
     }
 
@@ -70,22 +98,31 @@ final class CursorOverlay {
         panel.setFrameOrigin(nsPoint)
     }
 
-    /// Brief green pulse on click commit — visual confirmation that the
-    /// click landed where the overlay was pointing.
+    /// On click commit: swap to `cursorarrow.rays` (blue) for ~150ms then
+    /// revert to idle `cursorarrow` (red). Visual confirmation that the click
+    /// landed where the overlay was pointing.
     func flashClick() {
-        let original: NSColor = .systemBlue
-        imageView.contentTintColor = .systemGreen
+        flashGeneration &+= 1
+        let gen = flashGeneration
+        imageView.image = clickImage
+        imageView.contentTintColor = clickTint
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-            self?.imageView.contentTintColor = original
+            guard let self = self, self.flashGeneration == gen else { return }
+            self.imageView.image = self.idleImage
+            self.imageView.contentTintColor = self.idleTint
         }
     }
 
     /// Convert CG point (top-left origin) → NSWindow origin (bottom-left).
     /// Centers the panel on the target point.
+    ///
+    /// The global coordinate Y-flip uses the PRIMARY display's height — i.e.
+    /// the display containing CG origin (0,0). `CGDisplayBounds(CGMainDisplayID())`
+    /// is authoritative for this; `NSScreen.main` returns the screen with the
+    /// key window (wrong on multi-monitor when the key window isn't on the
+    /// primary), and `NSScreen.screens.first` is order-dependent.
     private static func cgToScreen(_ cg: CGPoint, panelSize: CGFloat) -> NSPoint {
-        let primaryHeight = (NSScreen.screens.first(where: { $0.frame.origin == .zero })
-                             ?? NSScreen.main
-                             ?? NSScreen.screens.first)?.frame.height ?? 0
+        let primaryHeight = CGDisplayBounds(CGMainDisplayID()).height
         return NSPoint(
             x: cg.x - panelSize / 2,
             y: primaryHeight - cg.y - panelSize / 2

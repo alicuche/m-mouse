@@ -50,7 +50,19 @@ final class EventTapManager: @unchecked Sendable {
     var onActivationChange: (@MainActor (Bool) -> Void)?
 
     var config: AppConfig {
-        didSet { rebuildKeyTables() }
+        didSet {
+            // CRITICAL: if active mode is running with keys held, the OLD
+            // keycodes are still in heldMovement/heldScroll. After rebuild,
+            // the keyUp lookup uses NEW keycodes — old held keys would never
+            // release → leaked timer. Force-release before rebuild.
+            if isActive {
+                mouseController.releaseAll()
+                mouseController.stopScroll()
+                heldMovement.removeAll()
+                heldScroll.removeAll()
+            }
+            rebuildKeyTables()
+        }
     }
 
     private let mouseController: MouseController
@@ -153,7 +165,11 @@ final class EventTapManager: @unchecked Sendable {
                 CGEvent.tapEnable(tap: tap, enable: true)
                 if !CGEvent.tapIsEnabled(tap: tap) {
                     print("[mMouse] Re-enable failed — recreating tap")
-                    _ = self.start()
+                    // Break the re-entrant call stack: timer event handler →
+                    // start() → teardownTap() would otherwise tear down the
+                    // very timer currently executing. Async hop ensures the
+                    // handler returns first.
+                    DispatchQueue.main.async { [weak self] in _ = self?.start() }
                 }
             }
         }
@@ -290,8 +306,13 @@ final class EventTapManager: @unchecked Sendable {
 
     private func scheduleActivationReset() {
         activationResetWork?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            self?.activationPressCount = 0
+        var work: DispatchWorkItem!
+        work = DispatchWorkItem { [weak self] in
+            // Identity guard: a cancelled work item that was already dequeued
+            // can still fire — bail if a newer scheduling has replaced us.
+            guard let self = self, self.activationResetWork === work else { return }
+            self.activationPressCount = 0
+            self.activationResetWork = nil
         }
         activationResetWork = work
         let delay = Double(keys.activationWindowMs) / 1000.0
@@ -342,8 +363,12 @@ final class EventTapManager: @unchecked Sendable {
     private func handleEnterClick() {
         enterClickCount += 1
         enterClickResetWork?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            self?.enterClickCount = 0
+        var work: DispatchWorkItem!
+        work = DispatchWorkItem { [weak self] in
+            // Identity guard against already-dequeued cancelled item firing.
+            guard let self = self, self.enterClickResetWork === work else { return }
+            self.enterClickCount = 0
+            self.enterClickResetWork = nil
         }
         enterClickResetWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + doubleClickWindowMs / 1000.0, execute: work)
@@ -520,30 +545,19 @@ final class EventTapManager: @unchecked Sendable {
 
     private var heldScroll: Set<CGKeyCode> = []
 
+    /// Invoked ONLY for keyDown — keyUp of movement keys is intercepted by
+    /// `releaseMovementOrScroll` in the main callback regardless of Shift state.
     private func handleScrollKey(keyCode: CGKeyCode, type: CGEventType, isRepeat: Bool) {
-        let direction: MouseController.Direction
-        switch keyCode {
-        case keys.upKey:    direction = .up
-        case keys.downKey:  direction = .down
-        case keys.leftKey:  direction = .left
-        case keys.rightKey: direction = .right
-        default: return
+        assert(type == .keyDown, "handleScrollKey called with non-keyDown type; release path is in main callback")
+        guard let direction = directionForMovementKey(keyCode) else { return }
+        if isRepeat { return }
+        // If user was moving this direction (no shift), then pressed shift,
+        // cancel the movement first so the same key doesn't double-fire.
+        if heldMovement.remove(keyCode) != nil {
+            mouseController.release(direction)
         }
-
-        if type == .keyDown {
-            if isRepeat { return }
-            // If user was moving this direction (no shift), then pressed shift,
-            // cancel the movement first so the same key doesn't double-fire.
-            if heldMovement.remove(keyCode) != nil {
-                mouseController.release(direction)
-            }
-            if heldScroll.insert(keyCode).inserted {
-                mouseController.pressScroll(direction)
-            }
-        } else if type == .keyUp {
-            if heldScroll.remove(keyCode) != nil {
-                mouseController.releaseScroll(direction)
-            }
+        if heldScroll.insert(keyCode).inserted {
+            mouseController.pressScroll(direction)
         }
     }
 
