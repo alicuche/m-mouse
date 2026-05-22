@@ -143,16 +143,18 @@ final class MouseController: @unchecked Sendable {
         postMouseEvent(.rightMouseUp,   at: pos, button: .right, clickCount: 1)
     }
 
+    /// Called after a successful click — used by overlay to flash visual feedback.
+    var onClickCommit: (@MainActor () -> Void)?
+
     /// Warp the real cursor to the current aim (or fall back to real cursor
     /// position if no aim set). Returns the position used.
     @discardableResult
     private func warpToAim() -> CGPoint {
         let target = aimPosition ?? realCursorPosition()
         CGWarpMouseCursorPosition(target)
-        // CGWarpMouseCursorPosition disables mouse-cursor coupling for a
-        // moment by default; re-associate so the user's physical mouse
-        // continues to work normally immediately after.
-        CGAssociateMouseAndMouseCursorPosition(1)
+        if let cb = onClickCommit {
+            MainActor.assumeIsolated { cb() }
+        }
         return target
     }
 

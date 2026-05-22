@@ -66,6 +66,9 @@ final class EventTapManager: @unchecked Sendable {
         mouseController.onAimChanged = { [weak overlay] point in
             overlay?.move(to: point)
         }
+        mouseController.onClickCommit = { [weak overlay] in
+            overlay?.flashClick()
+        }
     }
 
     deinit {

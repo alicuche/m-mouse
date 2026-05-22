@@ -70,6 +70,16 @@ final class CursorOverlay {
         panel.setFrameOrigin(nsPoint)
     }
 
+    /// Brief green pulse on click commit — visual confirmation that the
+    /// click landed where the overlay was pointing.
+    func flashClick() {
+        let original: NSColor = .systemBlue
+        imageView.contentTintColor = .systemGreen
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            self?.imageView.contentTintColor = original
+        }
+    }
+
     /// Convert CG point (top-left origin) → NSWindow origin (bottom-left).
     /// Centers the panel on the target point.
     private static func cgToScreen(_ cg: CGPoint, panelSize: CGFloat) -> NSPoint {
