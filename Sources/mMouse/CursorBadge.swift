@@ -21,12 +21,12 @@ final class CursorBadge {
     /// what's under the cursor.
     private let size: CGFloat = 10
 
-    /// Pixel offset from the cursor hotspot to the badge's center. Positive
-    /// values place the badge to the bottom-right of the cursor (matches
-    /// where macOS itself draws cursor decorations like the "drag count"
-    /// badge in Finder).
-    private let offsetX: CGFloat = 14
-    private let offsetY: CGFloat = 14
+    /// Pixel offset from the cursor hotspot to the badge's panel-origin (top-
+    /// left of the badge in CG coords). Tuned to sit snugly next to the
+    /// cursor's tip — slightly right of and slightly below the hotspot, but
+    /// close enough that the eye reads "cursor + badge" as one unit.
+    private let offsetX: CGFloat = 6
+    private let offsetY: CGFloat = 4
 
     private let idleTint:   NSColor = .systemRed
     private let actionTint: NSColor = .systemGreen
