@@ -54,12 +54,22 @@ final class EventTapManager: @unchecked Sendable {
             // CRITICAL: if active mode is running with keys held, the OLD
             // keycodes are still in heldMovement/heldScroll. After rebuild,
             // the keyUp lookup uses NEW keycodes — old held keys would never
-            // release → leaked timer. Force-release before rebuild.
+            // release → leaked timer. Force-release before rebuild. Also end
+            // any in-progress drag so apps don't see a hanging mouseDown.
+            //
+            // Order matters: clear our keycode bookkeeping FIRST, then ask
+            // MouseController to stop its timers — otherwise a keyUp event
+            // dispatched on the same main RunLoop between the two could see
+            // a stale entry. After cleanup, restore the active-mode cursor-
+            // hidden invariant (drag exit shows the cursor; we want it hidden
+            // again because active mode persists).
             if isActive {
-                mouseController.releaseAll()
-                mouseController.stopScroll()
+                cleanupDragIfNeeded()
                 heldMovement.removeAll()
                 heldScroll.removeAll()
+                mouseController.releaseAll()
+                mouseController.stopScroll()
+                hideSystemCursor()
             }
             rebuildKeyTables()
         }
@@ -108,6 +118,11 @@ final class EventTapManager: @unchecked Sendable {
     @discardableResult
     func start() -> Bool {
         assert(Thread.isMainThread, "EventTapManager.start must run on main")
+        // If we're recreating the tap while a drag is in progress (e.g. health
+        // timer recovery, sleep/wake), commit the mouseUp BEFORE tearing down —
+        // otherwise the foreground app sees a permanent mouseDown that never
+        // resolves until next click.
+        cleanupDragIfNeeded()
         teardownTap()
 
         let mask: CGEventMask =
@@ -204,6 +219,10 @@ final class EventTapManager: @unchecked Sendable {
     private let enterKeyCode: CGKeyCode = CGKeyCode(kVK_Return)
     private let keypadEnterKeyCode: CGKeyCode = CGKeyCode(kVK_ANSI_KeypadEnter)
     private let escapeKeyCode: CGKeyCode = CGKeyCode(kVK_Escape)
+    // Vim-style visual-mode drag toggle. Hardcoded for the same reason Enter/Esc
+    // are: any movement/non-conflict key would do, but stability across configs
+    // matters more than letting the user override.
+    private let dragToggleKeyCode: CGKeyCode = CGKeyCode(kVK_ANSI_V)
     private let doubleClickWindowMs: Double = 400
 
     // MARK: - Cached key tables (rebuilt on config change)
@@ -255,15 +274,35 @@ final class EventTapManager: @unchecked Sendable {
 
         // Foot-gun guard: activation key must not collide with Enter — the
         // active-mode click handler would never see Enter because the activation
-        // check runs first and would consume every press.
+        // check runs first and would consume every press. Same for `v`
+        // (drag-toggle) — would never be reachable in active mode.
         if keys.activationKeyCode == enterKeyCode || keys.activationKeyCode == keypadEnterKeyCode {
             print("[mMouse] WARNING: activation key collides with Enter (used for click) — DISARMING activation. Choose a different key.")
+            keys.activationKeyCode = EventTapManager.unmappedKey
+        }
+        if keys.activationKeyCode == dragToggleKeyCode {
+            print("[mMouse] WARNING: activation key collides with drag-toggle 'v' — DISARMING activation. Choose a different key.")
             keys.activationKeyCode = EventTapManager.unmappedKey
         }
         keys.upKey    = resolveKey(c.keys.up,    role: "keys.up")
         keys.downKey  = resolveKey(c.keys.down,  role: "keys.down")
         keys.leftKey  = resolveKey(c.keys.left,  role: "keys.left")
         keys.rightKey = resolveKey(c.keys.right, role: "keys.right")
+
+        // Foot-gun guard: movement keys must not collide with the drag-toggle
+        // key (`v`) — the drag branch runs first in handle() and would consume
+        // every press, making that direction unreachable while active. Disarm
+        // the colliding direction(s) and warn the user.
+        func disarmIfCollidesWithDragToggle(_ kc: inout CGKeyCode, label: String) {
+            if kc == dragToggleKeyCode {
+                print("[mMouse] WARNING: \(label) collides with drag-toggle key 'v' — DISARMING \(label). Pick a different movement key in ~/.mMouse.json.")
+                kc = EventTapManager.unmappedKey
+            }
+        }
+        disarmIfCollidesWithDragToggle(&keys.upKey,    label: "keys.up")
+        disarmIfCollidesWithDragToggle(&keys.downKey,  label: "keys.down")
+        disarmIfCollidesWithDragToggle(&keys.leftKey,  label: "keys.left")
+        disarmIfCollidesWithDragToggle(&keys.rightKey, label: "keys.right")
 
         movementKeyCodes = Set([keys.upKey, keys.downKey, keys.leftKey, keys.rightKey]
             .filter { $0 != EventTapManager.unmappedKey })
@@ -336,6 +375,12 @@ final class EventTapManager: @unchecked Sendable {
             }
             hideSystemCursor()
         } else {
+            // If still dragging when deactivating, commit the mouseUp first
+            // so apps don't get stuck with a pending button-down event.
+            if mouseController.isDragging {
+                mouseController.endDrag()
+                MainActor.assumeIsolated { overlay.setDragMode(false) }
+            }
             mouseController.releaseAll()
             heldMovement.removeAll()
             mouseController.setBoost(1.0)
@@ -348,6 +393,37 @@ final class EventTapManager: @unchecked Sendable {
         heldScroll.removeAll()
         mouseController.stopScroll()
         print("[mMouse] mMouse mode: \(isActive ? "ACTIVE" : "inactive")")
+    }
+
+    // MARK: - Drag mode toggle
+
+    private func enterDragMode() {
+        guard !mouseController.isDragging else { return }
+        mouseController.startDrag()
+        MainActor.assumeIsolated { overlay.setDragMode(true) }
+        // Cursor must be visible during drag so the user sees the selection
+        // rectangle / drag image apps render.
+        showSystemCursor()
+    }
+
+    private func exitDragMode() {
+        guard mouseController.isDragging else { return }
+        mouseController.endDrag()
+        MainActor.assumeIsolated { overlay.setDragMode(false) }
+        // Active mode continues — re-hide cursor.
+        if isActive { hideSystemCursor() }
+    }
+
+    /// Safety net for code paths that destroy or rebuild the tap (sleep/wake,
+    /// tap recreate, config hot-reload). If a drag is in progress, post the
+    /// mouseUp NOW so the foreground app doesn't get stuck with a phantom
+    /// button-down event. Idempotent — safe to call when not dragging.
+    private func cleanupDragIfNeeded() {
+        guard mouseController.isDragging else { return }
+        mouseController.endDrag()
+        MainActor.assumeIsolated { overlay.setDragMode(false) }
+        // Don't touch cursor visibility here — caller owns that decision based
+        // on the broader transition (deactivate vs reload-while-active).
     }
 
     // MARK: - System cursor hide/show
@@ -484,10 +560,24 @@ final class EventTapManager: @unchecked Sendable {
 
         // Hardcoded panic deactivate: Esc always exits active mode.
         // Safety net if Cmd+J+J state machine ever wedges.
+        // (toggleActivation handles ending an in-progress drag automatically.)
         if keyCode == escapeKeyCode {
             if type == .keyDown && !isRepeat {
                 print("[mMouse] Esc pressed — deactivating")
                 toggleActivation()
+            }
+            return nil
+        }
+
+        // Hardcoded drag toggle: `v` (vim visual mode). Press to start drag,
+        // press again (or Enter) to commit mouseUp.
+        if keyCode == dragToggleKeyCode {
+            if type == .keyDown && !isRepeat {
+                if mouseController.isDragging {
+                    exitDragMode()
+                } else {
+                    enterDragMode()
+                }
             }
             return nil
         }
@@ -502,8 +592,10 @@ final class EventTapManager: @unchecked Sendable {
                 releaseMovementOrScroll(keyCode: keyCode)
                 return nil
             }
-            // keyDown: Shift + movement = SCROLL at aim position.
-            if flags.contains(.maskShift) {
+            // keyDown: Shift + movement = SCROLL at aim position — UNLESS we're
+            // dragging, in which case Shift is left for the app (e.g. Shift+drag
+            // to extend a selection) and the arrow continues drag-move.
+            if flags.contains(.maskShift) && !mouseController.isDragging {
                 handleScrollKey(keyCode: keyCode, type: type, isRepeat: isRepeat)
                 return nil
             }
@@ -517,7 +609,11 @@ final class EventTapManager: @unchecked Sendable {
 
         if keyCode == enterKeyCode || keyCode == keypadEnterKeyCode {
             if type == .keyDown && !isRepeat {
-                if flags.contains(.maskShift) {
+                // During drag, Enter commits the drag (mouseUp). No regular
+                // click semantics — would corrupt the drag state.
+                if mouseController.isDragging {
+                    exitDragMode()
+                } else if flags.contains(.maskShift) {
                     handleRightClick()
                 } else {
                     handleEnterClick()
@@ -606,7 +702,15 @@ final class EventTapManager: @unchecked Sendable {
 
     func forceDeactivate() {
         assert(Thread.isMainThread)
-        if isActive { toggleActivation() }
+        if isActive {
+            toggleActivation()
+            return
+        }
+        // Defensive: if state ever drifts so a drag is on but isActive is
+        // false (shouldn't happen via normal flow, but a future refactor or
+        // unexpected event order could), still post the mouseUp so the app
+        // doesn't get stuck.
+        cleanupDragIfNeeded()
     }
 
     func activateFromMenu() {

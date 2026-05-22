@@ -11,7 +11,8 @@
   - `Enter × 2` (2 lần liên tiếp trong 400ms) → double click
   - `Shift + Enter` → right click
 - **Scroll**: `Shift + movement_key` → scroll lên/xuống/trái/phải tại vị trí aim
-- **🔒 Full keyboard lockdown** khi active: mọi phím không phải movement / Enter / Shift+movement / activation combo đều bị consume — không leak shortcut sang app khác
+- **Drag (quét khối)**: `v` toggle → giữ mouseDown tại aim, di chuyển bằng arrows = quét, nhấn `v` lần nữa hoặc `Enter` để commit mouseUp
+- **🔒 Full keyboard lockdown** khi active: mọi phím không phải movement / Enter / Shift+movement / `v` / activation combo đều bị consume — không leak shortcut sang app khác
 - **Speed**: 1 số nguyên 1..10 (1=chậm, 10=nhanh)
 - **Hot-reload** config khi sửa `~/.mMouse.json`
 - **Multi-monitor**: clamp con trỏ trong display đang dùng
@@ -64,11 +65,15 @@ Lần đầu chạy:
 | Scroll down | `Shift + j` |
 | Scroll left | `Shift + h` |
 | Scroll right | `Shift + l` |
-| **Panic exit** (cứu khi stuck) | `Esc` |
+| **Drag start / end (quét khối)** | `v` (vim visual mode) |
+| End drag (alt) | `Enter` |
+| **Panic exit** (cứu khi stuck) | `Esc` (tự commit drag nếu đang quét) |
 
 > 💡 **Sticky active mode**: sau click, mMouse **không tự thoát** — cursor giữ nguyên vị trí, mày tiếp tục di chuyển / click / scroll ngay được. Để thoát, dùng activation combo lần nữa hoặc `Esc`.
 
 > 📜 **Scroll**: giữ `Shift + arrow` → scroll wheel tại vị trí aim. Cursor thật sẽ warp đến aim trước khi scroll (để event đáp xuống đúng cửa sổ dưới cursor). Hold ramp up: 0.1s → 1×, 0.5s → 3×.
+
+> 🎯 **Drag (quét khối)**: nhấn `v` để start drag (mouseDown tại aim). Overlay đổi sang icon **lasso màu cam**, system cursor xuất hiện lại (để mày thấy selection rectangle). Di chuyển arrows = drag/quét. Nhấn `v` lần nữa, `Enter`, hoặc `Esc` để commit mouseUp. Trong drag mode, `Shift + arrow` vẫn là drag-move (không scroll) — Shift được pass-through để app xử lý (vd Shift+drag để extend selection trong text editor).
 
 Menu bar:
 - `⚪ mM` — inactive (phím gõ bình thường)

@@ -66,8 +66,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        // Restore system cursor in case we hid it for active mode. Without
-        // this, quitting while active leaves the cursor invisible until logout.
+        // Force-deactivate first: ends any in-progress drag (posts mouseUp so
+        // the foreground app doesn't get stuck with a hanging button-down),
+        // releases held movement/scroll, and restores the system cursor.
+        eventTap?.forceDeactivate()
+        // Belt-and-suspenders: if forceDeactivate was a no-op because we
+        // weren't active, still ensure cursor is visible (defends against a
+        // stuck-hidden state from any prior abnormal exit path).
         eventTap?.ensureCursorVisibleForShutdown()
     }
 

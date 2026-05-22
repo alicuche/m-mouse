@@ -14,13 +14,18 @@ final class CursorOverlay {
     private let size: CGFloat = 36
 
     // Idle: red cursorarrow. Click commit: blue cursorarrow.rays for ~150ms.
+    // Drag mode (vim-style `v` toggle): orange lasso until drag ends.
     private let idleSymbolName  = "cursorarrow"
     private let clickSymbolName = "cursorarrow.rays"
-    private let idleTint: NSColor  = .systemRed
+    private let dragSymbolName  = "lasso"
+    private let idleTint:  NSColor = .systemRed
     private let clickTint: NSColor = .systemBlue
+    private let dragTint:  NSColor = .systemOrange
 
     private let idleImage:  NSImage?
     private let clickImage: NSImage?
+    private let dragImage:  NSImage?
+    private var inDragMode: Bool = false
 
     /// Monotonically incremented per flash so a delayed restore from an OLD
     /// flash doesn't clobber a NEW one that started in the meantime.
@@ -56,11 +61,14 @@ final class CursorOverlay {
                 .withSymbolConfiguration(cfg)
             self.clickImage = NSImage(systemSymbolName: clickSymbolName, accessibilityDescription: "mMouse click")?
                 .withSymbolConfiguration(cfg)
+            self.dragImage  = NSImage(systemSymbolName: dragSymbolName,  accessibilityDescription: "mMouse drag")?
+                .withSymbolConfiguration(cfg)
         } else {
-            // Fallback for pre-Big Sur — same image both states, color flash only.
+            // Fallback for pre-Big Sur — same image all states, color tint only.
             let fb = CursorOverlay.fallbackImage(size: size, tint: idleTint)
-            self.idleImage = fb
+            self.idleImage  = fb
             self.clickImage = fb
+            self.dragImage  = fb
         }
 
         imageView.image = self.idleImage
@@ -78,6 +86,7 @@ final class CursorOverlay {
         // Restore idle state on every show — covers the case where the user
         // deactivated mid-flash and re-activated before restore fired.
         flashGeneration &+= 1
+        inDragMode = false
         imageView.image = idleImage
         imageView.contentTintColor = idleTint
         move(to: point)
@@ -87,7 +96,22 @@ final class CursorOverlay {
     func hide() {
         // Invalidate any pending flash restore — overlay is gone.
         flashGeneration &+= 1
+        inDragMode = false
         panel.orderOut(nil)
+    }
+
+    /// Switch overlay to drag visual (orange lasso) or back to idle.
+    /// Bumps generation so any in-flight flash restore won't clobber the new state.
+    func setDragMode(_ active: Bool) {
+        flashGeneration &+= 1
+        inDragMode = active
+        if active {
+            imageView.image = dragImage
+            imageView.contentTintColor = dragTint
+        } else {
+            imageView.image = idleImage
+            imageView.contentTintColor = idleTint
+        }
     }
 
     /// Updates overlay position to follow the aim. `point` is in CG coordinates
@@ -108,8 +132,14 @@ final class CursorOverlay {
         imageView.contentTintColor = clickTint
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             guard let self = self, self.flashGeneration == gen else { return }
-            self.imageView.image = self.idleImage
-            self.imageView.contentTintColor = self.idleTint
+            // Restore to whichever resting state we were in (idle OR drag).
+            if self.inDragMode {
+                self.imageView.image = self.dragImage
+                self.imageView.contentTintColor = self.dragTint
+            } else {
+                self.imageView.image = self.idleImage
+                self.imageView.contentTintColor = self.idleTint
+            }
         }
     }
 

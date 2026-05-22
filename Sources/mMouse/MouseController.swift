@@ -144,6 +144,36 @@ final class MouseController: @unchecked Sendable {
         postMouseEvent(.rightMouseUp,   at: pos, button: .right, clickCount: 1)
     }
 
+    // MARK: - Drag (vim-style visual mode)
+
+    /// True from `startDrag()` until `endDrag()`. While true, `tick()` posts
+    /// `leftMouseDragged` events at every aim update so apps render the
+    /// selection rectangle / drag operation.
+    private(set) var isDragging: Bool = false
+
+    /// Begin a drag at the current aim. Posts `leftMouseDown` then leaves the
+    /// button held until `endDrag()`. Caller must NOT call this twice — guarded
+    /// by the `isDragging` flag.
+    func startDrag() {
+        guard !isDragging else { return }
+        if aimPosition == nil { centerAimOnCurrentDisplay() }
+        let pos = warpRealCursorToAim()
+        postMouseEvent(.leftMouseDown, at: pos, button: .left, clickCount: 1)
+        isDragging = true
+        print("[mMouse] drag start at (\(Int(pos.x)),\(Int(pos.y)))")
+    }
+
+    /// End a drag — posts `leftMouseUp` at current aim. Safe to call when not
+    /// dragging (no-op).
+    func endDrag() {
+        guard isDragging else { return }
+        let target = aimPosition ?? realCursorPosition()
+        CGWarpMouseCursorPosition(target)
+        postMouseEvent(.leftMouseUp, at: target, button: .left, clickCount: 1)
+        isDragging = false
+        print("[mMouse] drag end at (\(Int(target.x)),\(Int(target.y)))")
+    }
+
     // MARK: - Scroll
 
     private var scrollTimer: DispatchSourceTimer?
@@ -338,7 +368,15 @@ final class MouseController: @unchecked Sendable {
         if let cb = onAimChanged {
             MainActor.assumeIsolated { cb(clamped) }
         }
-        // NOTE: real cursor is NOT moved here. Overlay-only aiming.
+        // While dragging, real cursor MUST follow the aim and we must post
+        // `mouseDragged` every tick — apps render selection rectangles based
+        // on this stream, not on raw cursor position. Without per-tick events,
+        // text editors / Finder won't draw the selection.
+        if isDragging {
+            CGWarpMouseCursorPosition(clamped)
+            postMouseEvent(.leftMouseDragged, at: clamped, button: .left, clickCount: 1)
+        }
+        // (When NOT dragging, real cursor stays parked — overlay-only aiming.)
     }
 
     // MARK: - Position helpers
