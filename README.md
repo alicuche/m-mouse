@@ -122,7 +122,19 @@ File: `~/.mMouse.json` (tự tạo lần đầu).
 
 **Speed boost** (mặc định Cmd): giữ Cmd + arrow → speed × 5 (config `speedBoost.multiplier`). Dùng để cross screen nhanh mà không cần đổi tốc độ trong config.
 
-**Auto-center on activate**: mỗi lần activate, cursor tự nhảy về **giữa display** đang dùng → start point luôn nhất quán.
+**Auto-center on activate**: mỗi lần activate, **aim overlay** (icon scope màu xanh) xuất hiện giữa display → start point nhất quán.
+
+### Cursor overlay mode
+
+Trong active mode, mMouse **không di chuyển con trỏ thật** (cursor system đứng yên ở vị trí cũ). Thay vào đó, một **floating icon** (target reticle) di chuyển theo phím — đây là "aim".
+
+- Movement keys (arrows) → di chuyển aim icon
+- `Enter` / `Shift+Enter` → real cursor **warp đến aim position** rồi click ngay
+
+Lợi ích:
+- Aim không trigger hover effects (tooltip, highlight) khi đang định vị
+- Visual feedback rõ — mày luôn biết cursor sẽ rơi ở đâu
+- Click "snap" cảm giác chính xác hơn
 
 Sửa file → save → mMouse tự reload, không cần restart.
 

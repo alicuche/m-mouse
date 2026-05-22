@@ -54,11 +54,18 @@ final class EventTapManager: @unchecked Sendable {
     }
 
     private let mouseController: MouseController
+    private let overlay: CursorOverlay
 
-    init(config: AppConfig, mouseController: MouseController) {
+    init(config: AppConfig, mouseController: MouseController, overlay: CursorOverlay) {
         self.config = config
         self.mouseController = mouseController
+        self.overlay = overlay
         rebuildKeyTables()
+        // Wire mouse controller aim updates → overlay position.
+        // onAimChanged is typed @MainActor; closure inherits isolation.
+        mouseController.onAimChanged = { [weak overlay] point in
+            overlay?.move(to: point)
+        }
     }
 
     deinit {
@@ -291,12 +298,17 @@ final class EventTapManager: @unchecked Sendable {
     private func toggleActivation() {
         isActive.toggle()
         if isActive {
-            // Park cursor at center of current display for predictable start.
-            mouseController.centerCursorOnCurrentDisplay()
+            // Aim starts at center of current display; show the floating
+            // overlay there. Real mouse cursor is NOT moved.
+            mouseController.centerAimOnCurrentDisplay()
+            if let aim = mouseController.currentAim {
+                MainActor.assumeIsolated { overlay.show(at: aim) }
+            }
         } else {
             mouseController.releaseAll()
             heldMovement.removeAll()
             mouseController.setBoost(1.0)
+            MainActor.assumeIsolated { overlay.hide() }
         }
         enterClickCount = 0
         enterClickResetWork?.cancel()

@@ -8,10 +8,17 @@ final class MouseController: @unchecked Sendable {
     private var tickAccumX: Double = 0
     private var tickAccumY: Double = 0
 
-    /// Locally tracked cursor position to avoid per-tick CGEvent allocation
-    /// and software-vs-hardware cursor lag. Resynced to the real cursor
-    /// position whenever movement starts from a stopped state.
-    private var ownedCursorPos: CGPoint?
+    /// The "aim" position. Driven by movement keys (NOT the real cursor —
+    /// the real cursor stays parked so hover effects don't fire while aiming).
+    /// Real cursor is only warped to this position when a click commits.
+    private var aimPosition: CGPoint?
+
+    /// Called every tick the aim position changes. Used by CursorOverlay
+    /// to render the floating aim icon. Always invoked on main thread.
+    var onAimChanged: (@MainActor (CGPoint) -> Void)?
+
+    /// Current aim position, or nil if no movement burst is active.
+    var currentAim: CGPoint? { aimPosition }
 
     /// Timestamp of current movement burst — used for acceleration.
     /// Short taps stay slow (precision); held keys ramp up to full speed.
@@ -86,9 +93,8 @@ final class MouseController: @unchecked Sendable {
 
     func press(_ direction: Direction) {
         if activeDirections.isEmpty {
-            // Sync internal position with the real cursor when we start moving
-            // (user may have moved the mouse manually since last session).
-            ownedCursorPos = realCursorPosition()
+            // Don't sync to real cursor — aim was set explicitly by overlay
+            // (e.g., centerAim called on activation). Just start ticking.
             movementStartedAt = CACurrentMediaTime()
         }
         activeDirections.insert(direction)
@@ -107,38 +113,56 @@ final class MouseController: @unchecked Sendable {
         stopTimer()
     }
 
-    /// Move cursor to the center of the display that currently contains it
-    /// (or the main display if none match). Used on activation so the user
-    /// has a predictable starting position.
-    func centerCursorOnCurrentDisplay() {
+    /// Sets the aim to the center of the display containing the real cursor
+    /// (or the main display if no display matches). Used on activation so
+    /// the user has a predictable starting point. Does NOT move the real
+    /// cursor — only the aim/overlay position.
+    func centerAimOnCurrentDisplay() {
         let current = realCursorPosition()
         let displays = cachedDisplayBounds.isEmpty ? [CGDisplayBounds(CGMainDisplayID())] : cachedDisplayBounds
         let active = displays.first(where: { $0.contains(current) }) ?? displays[0]
         let center = CGPoint(x: active.midX, y: active.midY)
-        ownedCursorPos = center
-        if let event = CGEvent(mouseEventSource: nil,
-                               mouseType: .mouseMoved,
-                               mouseCursorPosition: center,
-                               mouseButton: .left) {
-            event.post(tap: .cghidEventTap)
-        }
+        setAim(center)
     }
 
     // MARK: - Click actions
 
-    /// Post a left click. `count=1` → single click. `count=2` after a count=1
-    /// makes apps recognize a double-click (matches real mouse behavior).
+    /// Post a left click at the current aim position (warping the real
+    /// cursor there first). `count=1` → single click. `count=2` after a
+    /// count=1 registers as double-click.
     func click(count: Int = 1) {
-        let pos = ownedCursorPos ?? realCursorPosition()
+        let pos = warpToAim()
         let clamped = max(1, min(3, count))
         postMouseEvent(.leftMouseDown, at: pos, button: .left, clickCount: Int64(clamped))
         postMouseEvent(.leftMouseUp,   at: pos, button: .left, clickCount: Int64(clamped))
     }
 
     func rightClick() {
-        let pos = ownedCursorPos ?? realCursorPosition()
+        let pos = warpToAim()
         postMouseEvent(.rightMouseDown, at: pos, button: .right, clickCount: 1)
         postMouseEvent(.rightMouseUp,   at: pos, button: .right, clickCount: 1)
+    }
+
+    /// Warp the real cursor to the current aim (or fall back to real cursor
+    /// position if no aim set). Returns the position used.
+    @discardableResult
+    private func warpToAim() -> CGPoint {
+        let target = aimPosition ?? realCursorPosition()
+        CGWarpMouseCursorPosition(target)
+        // CGWarpMouseCursorPosition disables mouse-cursor coupling for a
+        // moment by default; re-associate so the user's physical mouse
+        // continues to work normally immediately after.
+        CGAssociateMouseAndMouseCursorPosition(1)
+        return target
+    }
+
+    /// Sets the aim position explicitly (used by EventTapManager to center
+    /// the overlay on activation, or to sync with real cursor manually).
+    func setAim(_ point: CGPoint) {
+        aimPosition = point
+        if let cb = onAimChanged {
+            MainActor.assumeIsolated { cb(point) }
+        }
     }
 
     // MARK: - Movement timer
@@ -158,8 +182,8 @@ final class MouseController: @unchecked Sendable {
         moveTimer = nil
         tickAccumX = 0
         tickAccumY = 0
-        ownedCursorPos = nil
         movementStartedAt = nil
+        // Keep aimPosition — user might click after stopping movement.
     }
 
     private func tick() {
@@ -189,17 +213,15 @@ final class MouseController: @unchecked Sendable {
         tickAccumY -= moveY
         if moveX == 0 && moveY == 0 { return }
 
-        let current = ownedCursorPos ?? realCursorPosition()
+        let current = aimPosition ?? realCursorPosition()
         let next = CGPoint(x: current.x + moveX, y: current.y + moveY)
         let clamped = clampToDisplays(next, current: current)
-        ownedCursorPos = clamped
-
-        if let event = CGEvent(mouseEventSource: nil,
-                               mouseType: .mouseMoved,
-                               mouseCursorPosition: clamped,
-                               mouseButton: .left) {
-            event.post(tap: .cghidEventTap)
+        aimPosition = clamped
+        // Tick fires on DispatchSource main queue → safe to call MainActor closure.
+        if let cb = onAimChanged {
+            MainActor.assumeIsolated { cb(clamped) }
         }
+        // NOTE: real cursor is NOT moved here. Overlay-only aiming.
     }
 
     // MARK: - Position helpers
