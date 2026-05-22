@@ -316,8 +316,8 @@ final class EventTapManager: @unchecked Sendable {
         enterClickCount = 0
         enterClickResetWork?.cancel()
         enterClickResetWork = nil
-        autoDeactivateWork?.cancel()
-        autoDeactivateWork = nil
+        heldScroll.removeAll()
+        mouseController.stopScroll()
         print("[mMouse] mMouse mode: \(isActive ? "ACTIVE" : "inactive")")
     }
 
@@ -354,38 +354,10 @@ final class EventTapManager: @unchecked Sendable {
         // placement, etc.) is intentional and matches OS behavior.
         let count = min(enterClickCount, 2)
         mouseController.click(count: count)
-
-        // Auto-deactivate after click activity quiets (waits for potential
-        // 2nd Enter for double-click). User can move + click, then immediately
-        // resume normal typing without manually deactivating.
-        scheduleAutoDeactivate()
     }
 
     private func handleRightClick() {
         mouseController.rightClick()
-        scheduleAutoDeactivate()
-    }
-
-    // MARK: - Auto-deactivate after click
-
-    private var autoDeactivateWork: DispatchWorkItem?
-
-    private func scheduleAutoDeactivate() {
-        autoDeactivateWork?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            guard let self = self, self.isActive else { return }
-            print("[mMouse] auto-deactivate after click")
-            self.toggleActivation()
-        }
-        autoDeactivateWork = work
-        // Wait one double-click window so a 2nd Enter can still register
-        // as click count=2 before we deactivate.
-        DispatchQueue.main.asyncAfter(deadline: .now() + doubleClickWindowMs / 1000.0, execute: work)
-    }
-
-    private func cancelAutoDeactivate() {
-        autoDeactivateWork?.cancel()
-        autoDeactivateWork = nil
     }
 
     // MARK: - Core callback
@@ -449,14 +421,26 @@ final class EventTapManager: @unchecked Sendable {
         if keyCode == escapeKeyCode {
             if type == .keyDown && !isRepeat {
                 print("[mMouse] Esc pressed — deactivating")
-                cancelAutoDeactivate()
                 toggleActivation()
             }
             return nil
         }
 
         if movementKeyCodes.contains(keyCode) {
-            cancelAutoDeactivate()
+            // On keyUp, ALWAYS release from whichever bucket holds the key —
+            // regardless of current Shift state. This prevents stuck timers
+            // when the user toggles Shift mid-hold (e.g. press j → press shift
+            // → release j: keyUp arrives with Shift held but j is in
+            // heldMovement, not heldScroll).
+            if type == .keyUp {
+                releaseMovementOrScroll(keyCode: keyCode)
+                return nil
+            }
+            // keyDown: Shift + movement = SCROLL at aim position.
+            if flags.contains(.maskShift) {
+                handleScrollKey(keyCode: keyCode, type: type, isRepeat: isRepeat)
+                return nil
+            }
             // Re-evaluate boost from current flags — covers the case where
             // the modifier was already held before the first movement keyDown
             // (no flagsChanged fires for that).
@@ -492,12 +476,73 @@ final class EventTapManager: @unchecked Sendable {
 
         if type == .keyDown {
             if isRepeat { return }
+            // Symmetric to handleScrollKey: if the key was scrolling (no shift
+            // now), cancel that bucket first.
+            if heldScroll.remove(keyCode) != nil {
+                mouseController.releaseScroll(direction)
+            }
             if heldMovement.insert(keyCode).inserted {
                 mouseController.press(direction)
             }
         } else if type == .keyUp {
             if heldMovement.remove(keyCode) != nil {
                 mouseController.release(direction)
+            }
+        }
+    }
+
+    /// Direction for a movement keycode, or nil if unmapped. Used by keyUp
+    /// fallback so we can release whichever bucket held the key.
+    private func directionForMovementKey(_ keyCode: CGKeyCode) -> MouseController.Direction? {
+        switch keyCode {
+        case keys.upKey:    return .up
+        case keys.downKey:  return .down
+        case keys.leftKey:  return .left
+        case keys.rightKey: return .right
+        default: return nil
+        }
+    }
+
+    /// Release the keycode from movement OR scroll bucket — whichever it lives in.
+    /// Called from keyUp regardless of current modifier flags so toggling Shift
+    /// mid-hold never leaks a running timer.
+    private func releaseMovementOrScroll(keyCode: CGKeyCode) {
+        guard let direction = directionForMovementKey(keyCode) else { return }
+        if heldMovement.remove(keyCode) != nil {
+            mouseController.release(direction)
+        }
+        if heldScroll.remove(keyCode) != nil {
+            mouseController.releaseScroll(direction)
+        }
+    }
+
+    // MARK: - Scroll key tracking
+
+    private var heldScroll: Set<CGKeyCode> = []
+
+    private func handleScrollKey(keyCode: CGKeyCode, type: CGEventType, isRepeat: Bool) {
+        let direction: MouseController.Direction
+        switch keyCode {
+        case keys.upKey:    direction = .up
+        case keys.downKey:  direction = .down
+        case keys.leftKey:  direction = .left
+        case keys.rightKey: direction = .right
+        default: return
+        }
+
+        if type == .keyDown {
+            if isRepeat { return }
+            // If user was moving this direction (no shift), then pressed shift,
+            // cancel the movement first so the same key doesn't double-fire.
+            if heldMovement.remove(keyCode) != nil {
+                mouseController.release(direction)
+            }
+            if heldScroll.insert(keyCode).inserted {
+                mouseController.pressScroll(direction)
+            }
+        } else if type == .keyUp {
+            if heldScroll.remove(keyCode) != nil {
+                mouseController.releaseScroll(direction)
             }
         }
     }

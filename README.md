@@ -10,7 +10,8 @@
   - `Enter` → left click
   - `Enter × 2` (2 lần liên tiếp trong 400ms) → double click
   - `Shift + Enter` → right click
-- **🔒 Full keyboard lockdown** khi active: mọi phím không phải movement / Enter / activation combo đều bị consume — không leak shortcut sang app khác
+- **Scroll**: `Shift + movement_key` → scroll lên/xuống/trái/phải tại vị trí aim
+- **🔒 Full keyboard lockdown** khi active: mọi phím không phải movement / Enter / Shift+movement / activation combo đều bị consume — không leak shortcut sang app khác
 - **Speed**: 1 số nguyên 1..10 (1=chậm, 10=nhanh)
 - **Hot-reload** config khi sửa `~/.mMouse.json`
 - **Multi-monitor**: clamp con trỏ trong display đang dùng
@@ -56,12 +57,18 @@ Lần đầu chạy:
 | Xuống | `j` |
 | Trái | `h` |
 | Phải | `l` |
-| Left click | `Enter` → **tự thoát mode** sau 400ms |
-| Double click | `Enter × 2` → **tự thoát mode** sau 400ms |
-| Right click | `Shift + Enter` → **tự thoát mode** sau 400ms |
+| Left click | `Enter` (mode vẫn active — tiếp tục thao tác) |
+| Double click | `Enter × 2` (trong 400ms) |
+| Right click | `Shift + Enter` |
+| Scroll up | `Shift + k` (giữ để scroll liên tục) |
+| Scroll down | `Shift + j` |
+| Scroll left | `Shift + h` |
+| Scroll right | `Shift + l` |
 | **Panic exit** (cứu khi stuck) | `Esc` |
 
-> 💡 **Auto-deactivate sau click**: sau khi click xong, mMouse tự thoát active mode → mày có thể gõ phím bình thường ngay. Nếu muốn ở lại để click nhiều lần, di chuyển thêm trước khi click (movement keys huỷ auto-deactivate).
+> 💡 **Sticky active mode**: sau click, mMouse **không tự thoát** — cursor giữ nguyên vị trí, mày tiếp tục di chuyển / click / scroll ngay được. Để thoát, dùng activation combo lần nữa hoặc `Esc`.
+
+> 📜 **Scroll**: giữ `Shift + arrow` → scroll wheel tại vị trí aim. Cursor thật sẽ warp đến aim trước khi scroll (để event đáp xuống đúng cửa sổ dưới cursor). Hold ramp up: 0.1s → 1×, 0.5s → 3×.
 
 Menu bar:
 - `⚪ mM` — inactive (phím gõ bình thường)
@@ -173,7 +180,8 @@ Sửa file → save → mMouse tự reload, không cần restart.
 ## Trade-off cần biết
 
 - Lần nhấn `Cmd+J` đầu trong sequence **luôn bị suppress**. Nếu không có J thứ 2 trong 500ms, keypress đầu đó mất (không pass tới app).
-- Khi active: **mọi phím** đều bị khoá ngoài h/j/k/l/Enter/Shift+Enter/activation. Cmd+Tab, Cmd+Q, gõ chữ — tất cả bị consume.
+- Khi active: **mọi phím** đều bị khoá ngoài h/j/k/l/Shift+(h/j/k/l)/Enter/Shift+Enter/activation. Cmd+Tab, Cmd+Q, gõ chữ — tất cả bị consume.
+- Click không tự thoát mode — phải nhấn activation combo lần nữa hoặc `Esc` để thoát.
 
 ## Troubleshooting
 

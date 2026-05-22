@@ -87,6 +87,7 @@ final class MouseController: @unchecked Sendable {
             NotificationCenter.default.removeObserver(obs)
         }
         moveTimer?.cancel()
+        scrollTimer?.cancel()
     }
 
     // MARK: - Direction press/release
@@ -141,6 +142,96 @@ final class MouseController: @unchecked Sendable {
         let pos = warpToAim()
         postMouseEvent(.rightMouseDown, at: pos, button: .right, clickCount: 1)
         postMouseEvent(.rightMouseUp,   at: pos, button: .right, clickCount: 1)
+    }
+
+    // MARK: - Scroll
+
+    private var scrollTimer: DispatchSourceTimer?
+    private var activeScrollDirections: Set<Direction> = []
+    private var scrollStartedAt: TimeInterval?
+
+    /// Lines per scroll tick (line-based scrolling — most apps map 1 line ≈ one
+    /// notch of a wheel mouse). Held longer = small acceleration ramp.
+    private let scrollTickRate: Double = 30 // 30 ticks/sec
+    private let scrollLinesPerTick: Int32 = 1
+
+    func pressScroll(_ direction: Direction) {
+        if activeScrollDirections.isEmpty {
+            // Warp real cursor to aim once — subsequent scrolls re-use that
+            // position. Scroll events are dispatched at the cursor location.
+            _ = warpRealCursorToAim()
+            scrollStartedAt = CACurrentMediaTime()
+        }
+        activeScrollDirections.insert(direction)
+        startScrollTimerIfNeeded()
+    }
+
+    func releaseScroll(_ direction: Direction) {
+        activeScrollDirections.remove(direction)
+        if activeScrollDirections.isEmpty {
+            stopScroll()
+        }
+    }
+
+    func stopScroll() {
+        scrollTimer?.cancel()
+        scrollTimer = nil
+        activeScrollDirections.removeAll()
+        scrollStartedAt = nil
+    }
+
+    private func startScrollTimerIfNeeded() {
+        guard scrollTimer == nil else { return }
+        let interval = 1.0 / scrollTickRate
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now(), repeating: interval)
+        timer.setEventHandler { [weak self] in self?.scrollTick() }
+        timer.resume()
+        scrollTimer = timer
+    }
+
+    private func scrollTick() {
+        guard !activeScrollDirections.isEmpty else { stopScroll(); return }
+
+        // Acceleration: tap stays gentle, hold ramps up to 3× after ~500ms.
+        let elapsed = scrollStartedAt.map { CACurrentMediaTime() - $0 } ?? 0
+        let mult: Int32
+        if elapsed < 0.1       { mult = 1 }
+        else if elapsed < 0.5  { mult = 2 }
+        else                   { mult = 3 }
+
+        var dy: Int32 = 0
+        var dx: Int32 = 0
+        if activeScrollDirections.contains(.up)    { dy += scrollLinesPerTick * mult }
+        if activeScrollDirections.contains(.down)  { dy -= scrollLinesPerTick * mult }
+        if activeScrollDirections.contains(.right) { dx -= scrollLinesPerTick * mult }
+        if activeScrollDirections.contains(.left)  { dx += scrollLinesPerTick * mult }
+
+        postScrollEvent(deltaY: dy, deltaX: dx)
+    }
+
+    /// Warp the real cursor to the aim (without firing onClickCommit, since
+    /// this isn't a click — used by scroll to position before posting wheel events).
+    @discardableResult
+    private func warpRealCursorToAim() -> CGPoint {
+        let target = aimPosition ?? realCursorPosition()
+        CGWarpMouseCursorPosition(target)
+        return target
+    }
+
+    private func postScrollEvent(deltaY: Int32, deltaX: Int32) {
+        // unit=.line → integer line count, matches normal wheel-mouse semantics
+        // (Smooth scroll apps still get reasonable values; coarse-grain apps
+        // like terminals scroll a line at a time as expected.)
+        guard let event = CGEvent(
+            scrollWheelEvent2Source: nil,
+            units: .line,
+            wheelCount: 2,
+            wheel1: deltaY,
+            wheel2: deltaX,
+            wheel3: 0
+        ) else { return }
+        event.post(tap: .cghidEventTap)
     }
 
     /// Called after a successful click — used by overlay to flash visual feedback.
