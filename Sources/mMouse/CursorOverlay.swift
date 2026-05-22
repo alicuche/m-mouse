@@ -11,16 +11,20 @@ final class CursorOverlay {
 
     private let panel: NSPanel
     private let imageView: NSImageView
-    private let size: CGFloat = 36
+    // Panel size — kept slim so the overlay doesn't cover the text or UI
+    // element the user is aiming at. Icon point sizes are even smaller (see
+    // init) and centered inside this frame.
+    private let size: CGFloat = 22
 
     // Idle: red cursorarrow. Click commit: blue cursorarrow.rays for ~150ms.
-    // Drag mode (vim-style `v` toggle): orange lasso until drag ends.
+    // Drag mode (vim-style `v` toggle): green I-beam (slim text caret) so it
+    // doesn't cover the characters being selected.
     private let idleSymbolName  = "cursorarrow"
     private let clickSymbolName = "cursorarrow.rays"
-    private let dragSymbolName  = "lasso"
+    private let dragSymbolName  = "character.cursor.ibeam"
     private let idleTint:  NSColor = .systemRed
     private let clickTint: NSColor = .systemBlue
-    private let dragTint:  NSColor = .systemOrange
+    private let dragTint:  NSColor = .systemGreen
 
     private let idleImage:  NSImage?
     private let clickImage: NSImage?
@@ -55,20 +59,27 @@ final class CursorOverlay {
         imageView.imageScaling = .scaleProportionallyUpOrDown
 
         // Pre-render symbols (avoids per-flash NSImage construction).
+        // Slim sizes so the overlay doesn't visually dominate. Drag is even
+        // smaller + lighter weight so the I-beam doesn't cover letters during
+        // text selection — precision matters here.
         if #available(macOS 11.0, *) {
-            let cfg = NSImage.SymbolConfiguration(pointSize: 26, weight: .bold)
+            let pointerCfg = NSImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
+            let ibeamCfg   = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
             self.idleImage  = NSImage(systemSymbolName: idleSymbolName,  accessibilityDescription: "mMouse aim")?
-                .withSymbolConfiguration(cfg)
+                .withSymbolConfiguration(pointerCfg)
             self.clickImage = NSImage(systemSymbolName: clickSymbolName, accessibilityDescription: "mMouse click")?
-                .withSymbolConfiguration(cfg)
-            self.dragImage  = NSImage(systemSymbolName: dragSymbolName,  accessibilityDescription: "mMouse drag")?
-                .withSymbolConfiguration(cfg)
+                .withSymbolConfiguration(pointerCfg)
+            // `character.cursor.ibeam` exists from SF Symbols 4 / macOS 13.
+            // Fall back to a hand-drawn vertical bar if missing on older OS.
+            let ibeam = NSImage(systemSymbolName: dragSymbolName, accessibilityDescription: "mMouse drag")?
+                .withSymbolConfiguration(ibeamCfg)
+            self.dragImage = ibeam ?? CursorOverlay.iBeamFallback(size: size, tint: dragTint)
         } else {
             // Fallback for pre-Big Sur — same image all states, color tint only.
             let fb = CursorOverlay.fallbackImage(size: size, tint: idleTint)
             self.idleImage  = fb
             self.clickImage = fb
-            self.dragImage  = fb
+            self.dragImage  = CursorOverlay.iBeamFallback(size: size, tint: dragTint)
         }
 
         imageView.image = self.idleImage
@@ -157,6 +168,29 @@ final class CursorOverlay {
             x: cg.x - panelSize / 2,
             y: primaryHeight - cg.y - panelSize / 2
         )
+    }
+
+    /// Slim vertical-bar I-beam used when `character.cursor.ibeam` symbol is
+    /// unavailable. Hand-drawn so it always renders consistently.
+    private static func iBeamFallback(size: CGFloat, tint: NSColor) -> NSImage {
+        let img = NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
+            NSColor.clear.setFill()
+            rect.fill()
+            tint.setFill()
+            // 2px-wide vertical bar centered, with 1px serifs top/bottom.
+            let barWidth: CGFloat  = 2
+            let barHeight: CGFloat = max(rect.height * 0.7, 10)
+            let cx = rect.midX
+            let cy = rect.midY
+            let bar = NSRect(x: cx - barWidth/2, y: cy - barHeight/2, width: barWidth, height: barHeight)
+            bar.fill()
+            let serif = NSRect(x: cx - 4, y: bar.minY - 1, width: 8, height: 1)
+            serif.fill()
+            let serif2 = NSRect(x: cx - 4, y: bar.maxY, width: 8, height: 1)
+            serif2.fill()
+            return true
+        }
+        return img
     }
 
     private static func fallbackImage(size: CGFloat, tint: NSColor) -> NSImage {
