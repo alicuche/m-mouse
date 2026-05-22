@@ -117,8 +117,39 @@ final class MouseController: @unchecked Sendable {
     /// Sets the aim to the current real cursor position. Used on activation so
     /// the overlay starts exactly where the user was looking — no jarring jump
     /// to screen center. Does NOT move the real cursor.
+    ///
+    /// Cross-references two APIs because `CGEvent(source:nil)?.location` was
+    /// observed to return a stale position right after `CGDisplayShowCursor`
+    /// on some setups (cursor "logical position" lagged behind physical mouse
+    /// movement that happened while the cursor was hidden). NSEvent's
+    /// mouseLocation is sourced from a different layer and stays live. We
+    /// prefer the NSEvent reading when the two disagree by more than a few px.
     func setAimToRealCursor() {
-        setAim(realCursorPosition())
+        let cg = realCursorPosition()
+        let ns = realCursorPositionFromNSEvent()
+        let dx = abs(cg.x - ns.x)
+        let dy = abs(cg.y - ns.y)
+        let chosen: CGPoint
+        if dx > 3 || dy > 3 {
+            // Source disagreement is the smoking gun for the stale-CG bug:
+            // CGEvent(source:nil)?.location can lag behind physical movement
+            // after CGDisplayShowCursor on some setups. NSEvent.mouseLocation
+            // is sourced from a different layer and stays live.
+            chosen = ns
+            print("[mMouse] activate: cursor sources disagree — CG=(\(Int(cg.x)),\(Int(cg.y))) NS=(\(Int(ns.x)),\(Int(ns.y))) → using NS")
+        } else {
+            chosen = cg
+            print("[mMouse] activate: aim → (\(Int(chosen.x)),\(Int(chosen.y)))")
+        }
+        setAim(chosen)
+    }
+
+    /// Cursor position via NSEvent.mouseLocation (NS bottom-left coords)
+    /// converted to CG top-left. Used as a cross-check in `setAimToRealCursor`.
+    private func realCursorPositionFromNSEvent() -> CGPoint {
+        let ns = NSEvent.mouseLocation
+        let primaryHeight = CGDisplayBounds(CGMainDisplayID()).height
+        return CGPoint(x: ns.x, y: primaryHeight - ns.y)
     }
 
     // MARK: - Click actions
@@ -376,7 +407,12 @@ final class MouseController: @unchecked Sendable {
     // MARK: - Position helpers
 
     private func realCursorPosition() -> CGPoint {
-        CGEvent(source: nil)?.location ?? .zero
+        // CGEvent path is preferred (matches the coord space used by every
+        // other CGEvent call in this file). Fall back to NSEvent — which
+        // also reports current cursor position — if CGEvent allocation fails.
+        // Falling back to .zero would silently warp the aim to the top-left.
+        if let p = CGEvent(source: nil)?.location { return p }
+        return realCursorPositionFromNSEvent()
     }
 
     private func clampToDisplays(_ point: CGPoint, current: CGPoint) -> CGPoint {
