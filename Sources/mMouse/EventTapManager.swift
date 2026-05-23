@@ -244,10 +244,6 @@ final class EventTapManager: @unchecked Sendable {
     private let enterKeyCode: CGKeyCode = CGKeyCode(kVK_Return)
     private let keypadEnterKeyCode: CGKeyCode = CGKeyCode(kVK_ANSI_KeypadEnter)
     private let escapeKeyCode: CGKeyCode = CGKeyCode(kVK_Escape)
-    // Vim-style visual-mode drag toggle. Hardcoded for the same reason Enter/Esc
-    // are: any movement/non-conflict key would do, but stability across configs
-    // matters more than letting the user override.
-    private let dragToggleKeyCode: CGKeyCode = CGKeyCode(kVK_ANSI_V)
     private let doubleClickWindowMs: Double = 400
 
     // MARK: - Cached key tables (rebuilt on config change)
@@ -322,35 +318,15 @@ final class EventTapManager: @unchecked Sendable {
 
         // Foot-gun guard: activation key must not collide with Enter — the
         // active-mode click handler would never see Enter because the activation
-        // check runs first and would consume every press. Same for `v`
-        // (drag-toggle) — would never be reachable in active mode.
+        // check runs first and would consume every press.
         if keys.activationKeyCode == enterKeyCode || keys.activationKeyCode == keypadEnterKeyCode {
             print("[mMouse] WARNING: activation key collides with Enter (used for click) — DISARMING activation. Choose a different key.")
-            keys.activationKeyCode = EventTapManager.unmappedKey
-        }
-        if keys.activationKeyCode == dragToggleKeyCode {
-            print("[mMouse] WARNING: activation key collides with drag-toggle 'v' — DISARMING activation. Choose a different key.")
             keys.activationKeyCode = EventTapManager.unmappedKey
         }
         keys.upKey    = resolveKey(c.keys.up,    role: "keys.up")
         keys.downKey  = resolveKey(c.keys.down,  role: "keys.down")
         keys.leftKey  = resolveKey(c.keys.left,  role: "keys.left")
         keys.rightKey = resolveKey(c.keys.right, role: "keys.right")
-
-        // Foot-gun guard: movement keys must not collide with the drag-toggle
-        // key (`v`) — the drag branch runs first in handle() and would consume
-        // every press, making that direction unreachable while active. Disarm
-        // the colliding direction(s) and warn the user.
-        func disarmIfCollidesWithDragToggle(_ kc: inout CGKeyCode, label: String) {
-            if kc == dragToggleKeyCode {
-                print("[mMouse] WARNING: \(label) collides with drag-toggle key 'v' — DISARMING \(label). Pick a different movement key in ~/.mMouse.json.")
-                kc = EventTapManager.unmappedKey
-            }
-        }
-        disarmIfCollidesWithDragToggle(&keys.upKey,    label: "keys.up")
-        disarmIfCollidesWithDragToggle(&keys.downKey,  label: "keys.down")
-        disarmIfCollidesWithDragToggle(&keys.leftKey,  label: "keys.left")
-        disarmIfCollidesWithDragToggle(&keys.rightKey, label: "keys.right")
 
         movementKeyCodes = Set([keys.upKey, keys.downKey, keys.leftKey, keys.rightKey]
             .filter { $0 != EventTapManager.unmappedKey })
@@ -472,23 +448,20 @@ final class EventTapManager: @unchecked Sendable {
         print("[mMouse] mMouse mode: \(isActive ? "ACTIVE" : "inactive")")
     }
 
-    // MARK: - Drag mode toggle
+    // MARK: - Drag mode (Shift-hold)
     //
-    // Two ways to start a drag:
-    //   .vToggle    — vim-style: press v to start, v/Enter/Esc to commit
-    //   .optionHold — hold Option + arrow: drag while Option held; release
-    //                 Option to commit (screenshot-tool style)
+    // Hold Shift + arrow → mouseDown on first movement, drag while Shift held,
+    // mouseUp when Shift is released. Screenshot-tool / lasso-select style.
     //
-    // dragSource lets us route the right "exit" trigger to the right drag:
-    // releasing Option only ends an Option-started drag, not a v-toggle drag
-    // that happens to have Option held mid-drag (e.g. for app-specific
-    // Option+drag behaviors).
+    // dragSource currently has just one non-.none case (.shiftHold) but is
+    // kept as an enum to leave room for additional drag triggers without
+    // refactoring the exitDragMode source-matching logic.
 
-    private enum DragSource { case none, vToggle, optionHold }
+    private enum DragSource { case none, shiftHold }
     private var dragSource: DragSource = .none
 
     /// Snapshot of flags from the previous keyboard/flagsChanged event.
-    /// Used to detect "Option was just released" by comparing prev vs current.
+    /// Used to detect "Shift was just released" by comparing prev vs current.
     private var lastObservedFlags: CGEventFlags = []
 
     private func enterDragMode(source: DragSource) {
@@ -499,8 +472,8 @@ final class EventTapManager: @unchecked Sendable {
     }
 
     /// End drag. If `forSource` is set, only ends if the current drag was
-    /// started by that source — protects v-drags from being ended by an
-    /// incidental Option release.
+    /// started by that source — leaves room for future drag triggers to
+    /// coexist without ending each other prematurely.
     private func exitDragMode(forSource source: DragSource? = nil) {
         guard mouseController.isDragging else { return }
         if let req = source, req != dragSource { return }
@@ -596,13 +569,13 @@ final class EventTapManager: @unchecked Sendable {
 
         // flagsChanged: always pass through so apps see modifier state changes.
         // Also tracks boost modifier so a held Cmd multiplies movement speed,
-        // and ends an Option-held drag the moment the user releases Option.
+        // and ends a Shift-held drag the moment the user releases Shift.
         if type == .flagsChanged {
             if isActive {
-                let prevOpt = lastObservedFlags.contains(.maskAlternate)
-                let currOpt = event.flags.contains(.maskAlternate)
-                if prevOpt && !currOpt && dragSource == .optionHold {
-                    exitDragMode(forSource: .optionHold)
+                let prevShift = lastObservedFlags.contains(.maskShift)
+                let currShift = event.flags.contains(.maskShift)
+                if prevShift && !currShift && dragSource == .shiftHold {
+                    exitDragMode(forSource: .shiftHold)
                 }
                 updateBoostFromFlags(event.flags)
             }
@@ -667,42 +640,29 @@ final class EventTapManager: @unchecked Sendable {
             }
         }
 
-        // Hardcoded drag toggle: `v` (vim visual mode). Press to start drag,
-        // press again (or Enter) to commit mouseUp.
-        if keyCode == dragToggleKeyCode {
-            if type == .keyDown && !isRepeat {
-                if mouseController.isDragging {
-                    exitDragMode()
-                } else {
-                    enterDragMode(source: .vToggle)
-                }
-            }
-            return nil
-        }
-
         if movementKeyCodes.contains(keyCode) {
             // On keyUp, ALWAYS release from whichever bucket holds the key —
-            // regardless of current Shift state. This prevents stuck timers
-            // when the user toggles Shift mid-hold (e.g. press j → press shift
-            // → release j: keyUp arrives with Shift held but j is in
-            // heldMovement, not heldScroll).
+            // regardless of current modifier state. This prevents stuck
+            // timers when the user toggles a modifier mid-hold (e.g. press j
+            // → press option → release j: keyUp arrives with Option held but
+            // j is in heldMovement, not heldScroll).
             if type == .keyUp {
                 releaseMovementOrScroll(keyCode: keyCode)
                 return nil
             }
-            // keyDown: Shift + movement = SCROLL at cursor — UNLESS we're
-            // dragging, in which case Shift is left for the app (e.g. Shift+drag
-            // to extend a selection) and the arrow continues drag-move.
+            // keyDown: Shift + movement = hold-to-drag (screenshot-tool style).
+            // The drag is committed when Shift is released (see the
+            // flagsChanged handler). Start it on the first movement if not
+            // already dragging.
             if flags.contains(.maskShift) && !mouseController.isDragging {
+                enterDragMode(source: .shiftHold)
+            }
+            // Option + movement = SCROLL at cursor. Suppressed while dragging
+            // so a Shift+Option+arrow combo doesn't try to scroll on top of
+            // the in-progress drag.
+            if flags.contains(.maskAlternate) && !mouseController.isDragging {
                 handleScrollKey(keyCode: keyCode, type: type, isRepeat: isRepeat)
                 return nil
-            }
-            // Option + movement = hold-to-drag (screenshot-tool style). Starts
-            // a drag on the first movement; the drag is committed when Option
-            // is released (see the flagsChanged handler). Skipped if already
-            // dragging from another source (`v`) so we don't double-start.
-            if flags.contains(.maskAlternate) && !mouseController.isDragging {
-                enterDragMode(source: .optionHold)
             }
             // Re-evaluate boost from current flags — covers the case where
             // the modifier was already held before the first movement keyDown

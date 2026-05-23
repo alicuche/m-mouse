@@ -10,8 +10,8 @@ Keyboard-driven cursor control for macOS. Goal: drop the physical mouse as much 
   - `Enter` → left click
   - `Enter × 2` (twice within 400ms) → double click
   - `Shift + Enter` → right click
-- **Scroll** *(hardcoded)*: `Shift + movement_key` → scroll wheel events at the cursor
-- **Drag / block selection** *(hardcoded)*: `v` toggles drag mode (mouseDown), arrows drag, `v` / `Enter` commits mouseUp
+- **Scroll** *(hardcoded)*: `Option + movement_key` → scroll wheel events at the cursor
+- **Drag / block selection** *(hardcoded)*: hold `Shift + arrow` → mouseDown, drag while held, release Shift → mouseUp
 - **🔒 Full keyboard lockdown** while active: every key not listed above is consumed — no shortcut leaks to other apps
 - **Speed**: integer 1..10 (default 3); quadratic curve + acceleration on hold
 - **Speed boost**: hold `Cmd` (configurable) while moving → 5× speed
@@ -47,13 +47,12 @@ First launch:
 | Left click | `Enter` (mode stays active) |
 | Double click | `Enter × 2` (within 400ms) |
 | Right click | `Shift + Enter` |
-| Scroll up | `Shift + ↑` (hold for continuous scroll) |
-| Scroll down | `Shift + ↓` |
-| Scroll left | `Shift + ←` |
-| Scroll right | `Shift + →` |
-| **Drag start / end** (toggle) | `v` |
-| End drag (alt) | `Enter` |
-| **Hold-to-drag** (screenshot-tool style) | `Option + arrow` (drag while held, release Option = mouseUp) |
+| Scroll up | `Option + ↑` (hold for continuous scroll) |
+| Scroll down | `Option + ↓` |
+| Scroll left | `Option + ←` |
+| Scroll right | `Option + →` |
+| **Hold-to-drag** (block select / screenshot) | `Shift + arrow` (drag while held, release Shift = mouseUp) |
+| Commit drag (alt) | `Enter` |
 | Speed boost (5× by default) | hold `Cmd` while moving |
 | **Panic exit** | `Esc` (auto-commits drag if in progress) |
 
@@ -70,20 +69,15 @@ Menu bar:
 
 ### Drag (block selection)
 
-Two ways to drag:
+Hold `Shift` then press an arrow → `mouseDown` at the current cursor. Keep `Shift` held while arrows move the cursor — the drag continues (`mouseDragged` posted each tick so apps render the selection rectangle). Release `Shift` → `mouseUp` commits.
 
-**Toggle drag (`v`)** — vim-style, hands-free for long/precise drags.
-- Press `v` to start drag (mouseDown at the current cursor).
-- Arrow keys move the cursor and post `mouseDragged` events each tick.
-- Press `v` again, `Enter`, or `Esc` to commit the `mouseUp`.
+- Releasing an arrow without releasing `Shift` keeps the mouse held down (useful when you want to pause mid-drag, reposition, then continue).
+- `Enter` also commits the drag (alternative to releasing Shift).
+- `Esc` commits any in-progress drag, then deactivates.
 
-**Hold-to-drag (`Option + arrow`)** — screenshot-tool style, momentary.
-- Hold `Option` then press an arrow to start drag (mouseDown).
-- Keep `Option` held while arrows move the cursor — the drag continues.
-- Release `Option` → mouseUp commits the drag. (Releasing an arrow without releasing Option keeps the mouse held down — useful when you want to pause mid-drag.)
-- Perfect for selecting a screenshot region after `Cmd+Shift+4`, lasso-selecting files in Finder, or any "mouse-down + move + release" gesture.
+Perfect for selecting a screenshot region after `Cmd+Shift+4`, lasso-selecting files in Finder, marquee-selecting in design tools, or any "mouse-down + move + release" gesture.
 
-In either mode, `Shift + arrow` is still drag-move (NOT scroll). Shift passes through to the app, so e.g. Shift+drag to extend a text-editor selection still works.
+Apps see the Shift modifier held during the drag, so Shift+drag semantics (e.g. extend a text-editor selection, snap to angle in design tools) work as expected.
 
 ### Why lock down every key?
 
@@ -139,7 +133,7 @@ File: `~/.mMouse.json` (created on first launch).
 | `speedBoost.multiplier` | Speed multiplier while boost modifier held | number (default `5`) |
 | `passthrough` | Array of `{modifier, key}` combos that pass through to the foreground app in active mode | array (default = Cmd+C/V/X/A/Z); `[]` = lock down everything |
 
-> **Hardcoded** (not configurable): `Enter` / `Shift+Enter` (click), `v` (drag toggle), `Esc` (panic exit), `Shift + movement` (scroll). The movement keys must NOT collide with `v` or `Enter` — mMouse warns and disarms the colliding direction if you try.
+> **Hardcoded** (not configurable): `Enter` / `Shift+Enter` (click), `Esc` (panic exit), `Shift + movement` (hold-to-drag), `Option + movement` (scroll). The movement keys must NOT collide with `Enter` — mMouse warns and disarms the colliding direction if you try.
 
 ### Speed cheat sheet
 
@@ -190,7 +184,7 @@ Per-tick = `0.5 × speed²` px at 60 Hz baseline, modulated by an acceleration c
 ## Trade-offs
 
 - For multi-tap combos (`repeatCount > 1`), the first press is **always suppressed** (we don't know yet if it's the start of a sequence). If the follow-ups don't arrive within `windowMs`, the press is dropped. Single-press combos (`repeatCount: 1`, the default) don't have this trade-off.
-- While active: **every key** is locked except movement / Shift+movement / Enter / Shift+Enter / `v` / `Esc` / activation. Cmd+Tab, Cmd+Q, typing — all consumed.
+- While active: **every key** is locked except movement / Shift+movement (drag) / Option+movement (scroll) / Cmd+movement (speed boost) / Enter / Shift+Enter (right click) / Esc / activation / passthrough whitelist. Everything else is consumed.
 - Click does not auto-exit the mode — press the activation combo again or `Esc` to leave.
 - Because the real cursor moves while you aim, hover effects (tooltips, link previews, button highlights) will fire just like with a physical mouse. This is intentional: you see exactly what the click will hit.
 - The activation, movement, and click handlers **cannot share keys**. mMouse warns and disarms the offender at config-load time.
