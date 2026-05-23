@@ -105,19 +105,42 @@ File: `~/.mMouse.json` (created on first launch).
   },
   "speed": 3,
   "passthrough": [
-    { "modifier": "command", "key": "c" },
-    { "modifier": "command", "key": "v" },
-    { "modifier": "command", "key": "x" },
-    { "modifier": "command", "key": "a" },
-    { "modifier": "command", "key": "z" },
-    { "modifier": "command", "key": "tab" }
+    { "modifier": "command",       "key": "c" },
+    { "modifier": "command",       "key": "v" },
+    { "modifier": "command",       "key": "x" },
+    { "modifier": "command",       "key": "a" },
+    { "modifier": "command",       "key": "z" },
+    { "modifier": "command+shift", "key": "z" },
+    { "modifier": "command",       "key": "s" },
+    { "modifier": "command",       "key": "n" },
+    { "modifier": "command",       "key": "t" },
+    { "modifier": "command",       "key": "w" },
+    { "modifier": "command+shift", "key": "t" },
+    { "modifier": "command",       "key": "r" },
+    { "modifier": "command",       "key": "l" },
+    { "modifier": "command",       "key": "f" },
+    { "modifier": "command",       "key": "," },
+    { "modifier": "command",       "key": "tab" },
+    { "modifier": "command",       "key": "space" },
+    { "modifier": "command",       "key": "h" },
+    { "modifier": "command",       "key": "m" },
+    { "modifier": "command+shift", "key": "3" },
+    { "modifier": "command+shift", "key": "4" },
+    { "modifier": "command+shift", "key": "5" }
   ]
 }
 ```
 
 > `speedBoost` is also configurable but omitted from the default JSON (defaults to `{ modifier: "command", multiplier: 5 }`). Add it to override.
 
-> `passthrough` is the **whitelist of shortcuts allowed to leak through to the foreground app even while mMouse is active**. The default list covers clipboard, undo, and app switcher (Cmd+C/V/X/A/Z/Tab). Add your own entries — e.g. `{ "modifier": "command", "key": "s" }` to keep Save working in active mode. Set `"passthrough": []` to lock down every non-mMouse key (the original v1 behavior).
+> `passthrough` is the **whitelist of shortcuts allowed to leak through to the foreground app even while mMouse is active**. The default list covers the everyday essentials grouped below:
+>
+> - **Clipboard / undo**: Cmd+C/V/X/A/Z, Cmd+Shift+Z (redo)
+> - **File / window / tab**: Cmd+S, Cmd+N, Cmd+T, Cmd+W, Cmd+Shift+T (reopen tab), Cmd+R, Cmd+L
+> - **Navigation**: Cmd+F, Cmd+`,` (preferences), Cmd+Tab, Cmd+Space (Spotlight), Cmd+H (hide), Cmd+M (minimize)
+> - **Screenshot**: Cmd+Shift+3/4/5 — Cmd+Shift+4 pairs perfectly with the new Shift+arrow hold-to-drag for keyboard-driven region selection
+>
+> Notable omission: `Cmd+Q` is **not** in the default list — accidental quit is too painful. Add it manually if you want it. Set `"passthrough": []` to lock down every non-mMouse key (the original v1 behavior).
 
 ### Parameters
 
@@ -131,7 +154,7 @@ File: `~/.mMouse.json` (created on first launch).
 | `speed` | Movement speed | **int 1..10** |
 | `speedBoost.modifier` | Modifier that boosts movement speed | modifier name |
 | `speedBoost.multiplier` | Speed multiplier while boost modifier held | number (default `5`) |
-| `passthrough` | Array of `{modifier, key}` combos that pass through to the foreground app in active mode | array (default = Cmd+C/V/X/A/Z); `[]` = lock down everything |
+| `passthrough` | Array of `{modifier, key}` combos that pass through to the foreground app in active mode | array (default covers clipboard / file ops / navigation / Spotlight / screenshot — see above); `[]` = lock down everything |
 
 > **Hardcoded** (not configurable): `Enter` / `Shift+Enter` (click), `Esc` (panic exit), `Shift + movement` (hold-to-drag), `Cmd + movement` (scroll). The movement keys must NOT collide with `Enter` — mMouse warns and disarms the colliding direction if you try. `speedBoost.modifier` should not include Cmd or be Shift exactly — those would silently lose to scroll / drag and never fire.
 

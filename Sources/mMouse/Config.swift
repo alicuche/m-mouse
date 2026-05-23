@@ -51,15 +51,39 @@ struct PassthroughCombo: Codable, Equatable, Hashable {
     var modifier: String
     var key: String
 
-    /// Built-in clipboard / editing / app-switching shortcuts that are
-    /// universally useful and would be painful to lose in active mode.
+    /// Built-in shortcuts that are universally useful and would be painful
+    /// to lose in active mode. Grouped by category in the list below.
+    /// Notable omissions on purpose: Cmd+Q (accidental-quit risk).
     static let defaultList: [PassthroughCombo] = [
-        PassthroughCombo(modifier: "command", key: "c"),   // copy
-        PassthroughCombo(modifier: "command", key: "v"),   // paste
-        PassthroughCombo(modifier: "command", key: "x"),   // cut
-        PassthroughCombo(modifier: "command", key: "a"),   // select all
-        PassthroughCombo(modifier: "command", key: "z"),   // undo
-        PassthroughCombo(modifier: "command", key: "tab"), // app switcher
+        // Clipboard / undo
+        PassthroughCombo(modifier: "command",       key: "c"),     // copy
+        PassthroughCombo(modifier: "command",       key: "v"),     // paste
+        PassthroughCombo(modifier: "command",       key: "x"),     // cut
+        PassthroughCombo(modifier: "command",       key: "a"),     // select all
+        PassthroughCombo(modifier: "command",       key: "z"),     // undo
+        PassthroughCombo(modifier: "command+shift", key: "z"),     // redo
+
+        // File / window / tab
+        PassthroughCombo(modifier: "command",       key: "s"),     // save
+        PassthroughCombo(modifier: "command",       key: "n"),     // new
+        PassthroughCombo(modifier: "command",       key: "t"),     // new tab
+        PassthroughCombo(modifier: "command",       key: "w"),     // close tab/window
+        PassthroughCombo(modifier: "command+shift", key: "t"),     // reopen closed tab
+        PassthroughCombo(modifier: "command",       key: "r"),     // refresh / reload
+        PassthroughCombo(modifier: "command",       key: "l"),     // focus location bar / select line
+
+        // Navigation
+        PassthroughCombo(modifier: "command",       key: "f"),     // find
+        PassthroughCombo(modifier: "command",       key: ","),     // preferences
+        PassthroughCombo(modifier: "command",       key: "tab"),   // app switcher
+        PassthroughCombo(modifier: "command",       key: "space"), // Spotlight
+        PassthroughCombo(modifier: "command",       key: "h"),     // hide app
+        PassthroughCombo(modifier: "command",       key: "m"),     // minimize window
+
+        // Screenshot — pairs with Shift+arrow hold-to-drag for region select
+        PassthroughCombo(modifier: "command+shift", key: "3"),     // screenshot full
+        PassthroughCombo(modifier: "command+shift", key: "4"),     // screenshot region
+        PassthroughCombo(modifier: "command+shift", key: "5"),     // screenshot panel
     ]
 }
 
