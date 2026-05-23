@@ -51,8 +51,9 @@ First launch:
 | Scroll down | `Shift + ↓` |
 | Scroll left | `Shift + ←` |
 | Scroll right | `Shift + →` |
-| **Drag start / end** | `v` |
+| **Drag start / end** (toggle) | `v` |
 | End drag (alt) | `Enter` |
+| **Hold-to-drag** (screenshot-tool style) | `Option + arrow` (drag while held, release Option = mouseUp) |
 | Speed boost (5× by default) | hold `Cmd` while moving |
 | **Panic exit** | `Esc` (auto-commits drag if in progress) |
 
@@ -69,10 +70,20 @@ Menu bar:
 
 ### Drag (block selection)
 
+Two ways to drag:
+
+**Toggle drag (`v`)** — vim-style, hands-free for long/precise drags.
 - Press `v` to start drag (mouseDown at the current cursor).
-- Arrow keys move the cursor and post `mouseDragged` events each tick, so apps render the selection rectangle.
-- `Shift + arrow` inside drag mode is still drag-move (NOT scroll). Shift passes through to the app, so e.g. Shift+drag to extend a text-editor selection still works.
+- Arrow keys move the cursor and post `mouseDragged` events each tick.
 - Press `v` again, `Enter`, or `Esc` to commit the `mouseUp`.
+
+**Hold-to-drag (`Option + arrow`)** — screenshot-tool style, momentary.
+- Hold `Option` then press an arrow to start drag (mouseDown).
+- Keep `Option` held while arrows move the cursor — the drag continues.
+- Release `Option` → mouseUp commits the drag. (Releasing an arrow without releasing Option keeps the mouse held down — useful when you want to pause mid-drag.)
+- Perfect for selecting a screenshot region after `Cmd+Shift+4`, lasso-selecting files in Finder, or any "mouse-down + move + release" gesture.
+
+In either mode, `Shift + arrow` is still drag-move (NOT scroll). Shift passes through to the app, so e.g. Shift+drag to extend a text-editor selection still works.
 
 ### Why lock down every key?
 

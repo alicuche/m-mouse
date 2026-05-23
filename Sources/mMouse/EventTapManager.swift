@@ -446,12 +446,14 @@ final class EventTapManager: @unchecked Sendable {
             let pos = currentCursorPosition()
             MainActor.assumeIsolated { badge.show(at: pos) }
             startBadgeFollowTimer()
+            // Reset the flag snapshot so Option-release detection compares
+            // against an empty baseline (the very first flagsChanged after
+            // activation will set this for subsequent comparisons).
+            lastObservedFlags = []
         } else {
             // If still dragging when deactivating, commit the mouseUp first
             // so apps don't get stuck with a pending button-down event.
-            if mouseController.isDragging {
-                mouseController.endDrag()
-            }
+            cleanupDragIfNeeded()
             mouseController.releaseAll()
             heldMovement.removeAll()
             mouseController.setBoost(1.0)
@@ -471,21 +473,44 @@ final class EventTapManager: @unchecked Sendable {
     }
 
     // MARK: - Drag mode toggle
+    //
+    // Two ways to start a drag:
+    //   .vToggle    — vim-style: press v to start, v/Enter/Esc to commit
+    //   .optionHold — hold Option + arrow: drag while Option held; release
+    //                 Option to commit (screenshot-tool style)
+    //
+    // dragSource lets us route the right "exit" trigger to the right drag:
+    // releasing Option only ends an Option-started drag, not a v-toggle drag
+    // that happens to have Option held mid-drag (e.g. for app-specific
+    // Option+drag behaviors).
 
-    private func enterDragMode() {
+    private enum DragSource { case none, vToggle, optionHold }
+    private var dragSource: DragSource = .none
+
+    /// Snapshot of flags from the previous keyboard/flagsChanged event.
+    /// Used to detect "Option was just released" by comparing prev vs current.
+    private var lastObservedFlags: CGEventFlags = []
+
+    private func enterDragMode(source: DragSource) {
         guard !mouseController.isDragging else { return }
         mouseController.startDrag()
+        dragSource = source
         fireActionIndicators()
     }
 
-    private func exitDragMode() {
+    /// End drag. If `forSource` is set, only ends if the current drag was
+    /// started by that source — protects v-drags from being ended by an
+    /// incidental Option release.
+    private func exitDragMode(forSource source: DragSource? = nil) {
         guard mouseController.isDragging else { return }
+        if let req = source, req != dragSource { return }
         mouseController.endDrag()
+        dragSource = .none
         fireActionIndicators()
     }
 
     /// Flash every UI indicator hooked up to onActionFire (menu bar icon)
-    /// plus the cursor badge. Centralized so all four action sites stay in
+    /// plus the cursor badge. Centralized so all action sites stay in
     /// lockstep — adding a new indicator only needs one new subscriber.
     private func fireActionIndicators() {
         MainActor.assumeIsolated {
@@ -501,6 +526,7 @@ final class EventTapManager: @unchecked Sendable {
     private func cleanupDragIfNeeded() {
         guard mouseController.isDragging else { return }
         mouseController.endDrag()
+        dragSource = .none
     }
 
     private func updateBoostFromFlags(_ flags: CGEventFlags) {
@@ -569,11 +595,18 @@ final class EventTapManager: @unchecked Sendable {
         }
 
         // flagsChanged: always pass through so apps see modifier state changes.
-        // Also tracks boost modifier so a held Cmd multiplies movement speed.
+        // Also tracks boost modifier so a held Cmd multiplies movement speed,
+        // and ends an Option-held drag the moment the user releases Option.
         if type == .flagsChanged {
             if isActive {
+                let prevOpt = lastObservedFlags.contains(.maskAlternate)
+                let currOpt = event.flags.contains(.maskAlternate)
+                if prevOpt && !currOpt && dragSource == .optionHold {
+                    exitDragMode(forSource: .optionHold)
+                }
                 updateBoostFromFlags(event.flags)
             }
+            lastObservedFlags = event.flags
             return Unmanaged.passUnretained(event)
         }
 
@@ -641,7 +674,7 @@ final class EventTapManager: @unchecked Sendable {
                 if mouseController.isDragging {
                     exitDragMode()
                 } else {
-                    enterDragMode()
+                    enterDragMode(source: .vToggle)
                 }
             }
             return nil
@@ -663,6 +696,13 @@ final class EventTapManager: @unchecked Sendable {
             if flags.contains(.maskShift) && !mouseController.isDragging {
                 handleScrollKey(keyCode: keyCode, type: type, isRepeat: isRepeat)
                 return nil
+            }
+            // Option + movement = hold-to-drag (screenshot-tool style). Starts
+            // a drag on the first movement; the drag is committed when Option
+            // is released (see the flagsChanged handler). Skipped if already
+            // dragging from another source (`v`) so we don't double-start.
+            if flags.contains(.maskAlternate) && !mouseController.isDragging {
+                enterDragMode(source: .optionHold)
             }
             // Re-evaluate boost from current flags — covers the case where
             // the modifier was already held before the first movement keyDown
