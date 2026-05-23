@@ -45,89 +45,43 @@ struct SpeedBoostConfig: Codable, Equatable {
     static let `default` = SpeedBoostConfig(modifier: "option", multiplier: 5)
 }
 
-/// A keyboard shortcut that is allowed to pass through to other apps even
-/// while mMouse is active. Same `modifier` syntax as ActivationComboConfig.
-struct PassthroughCombo: Codable, Equatable, Hashable {
-    var modifier: String
-    var key: String
-
-    /// Built-in shortcuts that are universally useful and would be painful
-    /// to lose in active mode. Grouped by category in the list below.
-    /// Notable omissions on purpose: Cmd+Q (accidental-quit risk).
-    static let defaultList: [PassthroughCombo] = [
-        // Clipboard / undo
-        PassthroughCombo(modifier: "command",       key: "c"),     // copy
-        PassthroughCombo(modifier: "command",       key: "v"),     // paste
-        PassthroughCombo(modifier: "command",       key: "x"),     // cut
-        PassthroughCombo(modifier: "command",       key: "a"),     // select all
-        PassthroughCombo(modifier: "command",       key: "z"),     // undo
-        PassthroughCombo(modifier: "command+shift", key: "z"),     // redo
-
-        // File / window / tab
-        PassthroughCombo(modifier: "command",       key: "s"),     // save
-        PassthroughCombo(modifier: "command",       key: "n"),     // new
-        PassthroughCombo(modifier: "command",       key: "t"),     // new tab
-        PassthroughCombo(modifier: "command",       key: "w"),     // close tab/window
-        PassthroughCombo(modifier: "command+shift", key: "t"),     // reopen closed tab
-        PassthroughCombo(modifier: "command",       key: "r"),     // refresh / reload
-        PassthroughCombo(modifier: "command",       key: "l"),     // focus location bar / select line
-
-        // Navigation
-        PassthroughCombo(modifier: "command",       key: "f"),     // find
-        PassthroughCombo(modifier: "command",       key: ","),     // preferences
-        PassthroughCombo(modifier: "command",       key: "tab"),   // app switcher
-        PassthroughCombo(modifier: "command",       key: "space"), // Spotlight
-        PassthroughCombo(modifier: "command",       key: "h"),     // hide app
-        PassthroughCombo(modifier: "command",       key: "m"),     // minimize window
-
-        // Screenshot — pairs with Shift+arrow hold-to-drag for region select
-        PassthroughCombo(modifier: "command+shift", key: "3"),     // screenshot full
-        PassthroughCombo(modifier: "command+shift", key: "4"),     // screenshot region
-        PassthroughCombo(modifier: "command+shift", key: "5"),     // screenshot panel
-    ]
-}
 
 struct AppConfig: Codable, Equatable {
     var activationCombo: ActivationComboConfig
     var keys: KeyConfig
     /// Speed level 1..10 (1 = slowest, 10 = fastest)
     var speed: Int
-    /// Modifier+multiplier for speed boost while moving (e.g. Cmd+arrow = 5×).
+    /// Modifier+multiplier for speed boost while moving (e.g. Option+arrow = 5×).
     var speedBoost: SpeedBoostConfig
-    /// Shortcuts that pass through to the foreground app while mMouse is
-    /// active. Default list covers clipboard/undo. Set to `[]` to lock down
-    /// every non-mMouse key (the original v1 behavior).
-    var passthrough: [PassthroughCombo]
 
     static let `default` = AppConfig(
         activationCombo: .default,
         keys: .default,
         speed: 3,
-        speedBoost: .default,
-        passthrough: PassthroughCombo.defaultList
+        speedBoost: .default
     )
 
     enum CodingKeys: String, CodingKey {
-        case activationCombo, keys, speed, speedBoost, passthrough
+        case activationCombo, keys, speed, speedBoost
     }
 
-    init(activationCombo: ActivationComboConfig, keys: KeyConfig, speed: Int, speedBoost: SpeedBoostConfig, passthrough: [PassthroughCombo]) {
+    init(activationCombo: ActivationComboConfig, keys: KeyConfig, speed: Int, speedBoost: SpeedBoostConfig) {
         self.activationCombo = activationCombo
         self.keys = keys
         self.speed = speed
         self.speedBoost = speedBoost
-        self.passthrough = passthrough
     }
 
     /// Tolerant decoder so configs written before newer fields were added
     /// continue to load with the default values for those fields.
+    /// Also silently ignores the legacy `passthrough` field (removed in v2:
+    /// mMouse now passes through everything not explicitly claimed).
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         activationCombo = try c.decode(ActivationComboConfig.self, forKey: .activationCombo)
         keys            = try c.decode(KeyConfig.self,              forKey: .keys)
         speed           = try c.decode(Int.self,                    forKey: .speed)
         speedBoost      = try c.decodeIfPresent(SpeedBoostConfig.self, forKey: .speedBoost) ?? .default
-        passthrough     = try c.decodeIfPresent([PassthroughCombo].self, forKey: .passthrough) ?? PassthroughCombo.defaultList
     }
 }
 

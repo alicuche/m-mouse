@@ -12,7 +12,7 @@ Keyboard-driven cursor control for macOS. Goal: drop the physical mouse as much 
   - `Shift + Enter` → right click
 - **Scroll** *(hardcoded)*: `Cmd + movement_key` → scroll wheel events at the cursor
 - **Drag / block selection** *(hardcoded)*: hold `Shift + arrow` → mouseDown, drag while held, release Shift → mouseUp
-- **🔒 Full keyboard lockdown** while active: every key not listed above is consumed — no shortcut leaks to other apps
+- **mMouse-priority routing**: only the keys mMouse actually uses (arrows, Enter, Esc, activation) are consumed. Every other shortcut — typing, Cmd+C/V/Q/Tab, Cmd+Shift+4, anything — passes straight through to the foreground app as if mMouse weren't running.
 - **Speed**: integer 1..10 (default 3); quadratic curve + acceleration on hold
 - **Speed boost**: hold `Cmd` (configurable) while moving → 5× speed
 - **Hot-reload** config — edit `~/.mMouse.json`, save, no restart
@@ -79,11 +79,11 @@ Perfect for selecting a screenshot region after `Cmd+Shift+4`, lasso-selecting f
 
 Apps see the Shift modifier held during the drag, so Shift+drag semantics (e.g. extend a text-editor selection, snap to angle in design tools) work as expected.
 
-### Why lock down every key?
+### Key routing model
 
-To **prevent conflicts** with other apps' shortcuts. If we didn't lock keys and you accidentally pressed `w` while Cmd happened to be held, Cmd+W would close a tab. Lockdown guarantees active mode is **pure mouse mode**.
+mMouse consumes ONLY the keys it actually uses (arrows, Enter, Esc, the activation combo). Every other key — typing, Cmd+C, Cmd+S, Cmd+Tab, Cmd+Shift+4, anything — passes through unchanged. You can keep typing in chat, save in your editor, copy/paste, take screenshots etc. all while active mode is on.
 
-Want to type → deactivate first (`Cmd+;`).
+If a third-party shortcut collides with an mMouse key (e.g. an app uses bare arrows or bare Enter), mMouse wins — that's the priority guarantee. Deactivate (`Cmd+;` or `Esc`) when you need the raw key in the foreground app.
 
 ## Config
 
@@ -103,44 +103,13 @@ File: `~/.mMouse.json` (created on first launch).
     "left": "left",
     "right": "right"
   },
-  "speed": 3,
-  "passthrough": [
-    { "modifier": "command",       "key": "c" },
-    { "modifier": "command",       "key": "v" },
-    { "modifier": "command",       "key": "x" },
-    { "modifier": "command",       "key": "a" },
-    { "modifier": "command",       "key": "z" },
-    { "modifier": "command+shift", "key": "z" },
-    { "modifier": "command",       "key": "s" },
-    { "modifier": "command",       "key": "n" },
-    { "modifier": "command",       "key": "t" },
-    { "modifier": "command",       "key": "w" },
-    { "modifier": "command+shift", "key": "t" },
-    { "modifier": "command",       "key": "r" },
-    { "modifier": "command",       "key": "l" },
-    { "modifier": "command",       "key": "f" },
-    { "modifier": "command",       "key": "," },
-    { "modifier": "command",       "key": "tab" },
-    { "modifier": "command",       "key": "space" },
-    { "modifier": "command",       "key": "h" },
-    { "modifier": "command",       "key": "m" },
-    { "modifier": "command+shift", "key": "3" },
-    { "modifier": "command+shift", "key": "4" },
-    { "modifier": "command+shift", "key": "5" }
-  ]
+  "speed": 3
 }
 ```
 
-> `speedBoost` is also configurable but omitted from the default JSON (defaults to `{ modifier: "command", multiplier: 5 }`). Add it to override.
+> `speedBoost` is also configurable but omitted from the default JSON (defaults to `{ modifier: "option", multiplier: 5 }`). Add it to override.
 
-> `passthrough` is the **whitelist of shortcuts allowed to leak through to the foreground app even while mMouse is active**. The default list covers the everyday essentials grouped below:
->
-> - **Clipboard / undo**: Cmd+C/V/X/A/Z, Cmd+Shift+Z (redo)
-> - **File / window / tab**: Cmd+S, Cmd+N, Cmd+T, Cmd+W, Cmd+Shift+T (reopen tab), Cmd+R, Cmd+L
-> - **Navigation**: Cmd+F, Cmd+`,` (preferences), Cmd+Tab, Cmd+Space (Spotlight), Cmd+H (hide), Cmd+M (minimize)
-> - **Screenshot**: Cmd+Shift+3/4/5 — Cmd+Shift+4 pairs perfectly with the new Shift+arrow hold-to-drag for keyboard-driven region selection
->
-> Notable omission: `Cmd+Q` is **not** in the default list — accidental quit is too painful. Add it manually if you want it. Set `"passthrough": []` to lock down every non-mMouse key (the original v1 behavior).
+> The legacy `passthrough` whitelist field is no longer used and is silently ignored if present in older configs. mMouse now passes through everything not in its own key set — see the routing model section above.
 
 ### Parameters
 
@@ -154,7 +123,6 @@ File: `~/.mMouse.json` (created on first launch).
 | `speed` | Movement speed | **int 1..10** |
 | `speedBoost.modifier` | Modifier that boosts movement speed | modifier name |
 | `speedBoost.multiplier` | Speed multiplier while boost modifier held | number (default `5`) |
-| `passthrough` | Array of `{modifier, key}` combos that pass through to the foreground app in active mode | array (default covers clipboard / file ops / navigation / Spotlight / screenshot — see above); `[]` = lock down everything |
 
 > **Hardcoded** (not configurable): `Enter` / `Shift+Enter` (click), `Esc` (panic exit), `Shift + movement` (hold-to-drag), `Cmd + movement` (scroll). The movement keys must NOT collide with `Enter` — mMouse warns and disarms the colliding direction if you try. `speedBoost.modifier` should not include Cmd or be Shift exactly — those would silently lose to scroll / drag and never fire.
 
@@ -207,7 +175,7 @@ Per-tick = `0.5 × speed²` px at 60 Hz baseline, modulated by an acceleration c
 ## Trade-offs
 
 - For multi-tap combos (`repeatCount > 1`), the first press is **always suppressed** (we don't know yet if it's the start of a sequence). If the follow-ups don't arrive within `windowMs`, the press is dropped. Single-press combos (`repeatCount: 1`, the default) don't have this trade-off.
-- While active: **every key** is locked except movement / Shift+movement (drag) / Cmd+movement (scroll) / Option+movement (speed boost) / Enter / Shift+Enter (right click) / Esc / activation / passthrough whitelist. Everything else is consumed.
+- While active, only mMouse's own keys are intercepted: arrows (any modifier — movement / drag / scroll / boost), Enter / Shift+Enter (click / right-click), Esc (deactivate), and the activation combo. Every other key passes through to the foreground app unchanged. No whitelist to maintain.
 - Click does not auto-exit the mode — press the activation combo again or `Esc` to leave.
 - Because the real cursor moves while you aim, hover effects (tooltips, link previews, button highlights) will fire just like with a physical mouse. This is intentional: you see exactly what the click will hit.
 - The activation, movement, and click handlers **cannot share keys**. mMouse warns and disarms the offender at config-load time.

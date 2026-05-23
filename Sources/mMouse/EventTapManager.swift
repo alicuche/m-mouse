@@ -267,29 +267,6 @@ final class EventTapManager: @unchecked Sendable {
     private var keys = CachedKeys()
     private var movementKeyCodes: Set<CGKeyCode> = []
 
-    /// Whitelist of (modifier, keyCode) pairs that pass through to the
-    /// foreground app even while active mode is on. Resolved from
-    /// `config.passthrough` at every rebuildKeyTables().
-    private struct PassthroughEntry: Hashable {
-        let modifier: CGEventFlags
-        let keyCode: CGKeyCode
-        // CGEventFlags isn't Hashable by default; reduce to rawValue.
-        func hash(into hasher: inout Hasher) {
-            hasher.combine(modifier.rawValue)
-            hasher.combine(keyCode)
-        }
-        static func == (lhs: Self, rhs: Self) -> Bool {
-            lhs.modifier == rhs.modifier && lhs.keyCode == rhs.keyCode
-        }
-    }
-    private var passthroughEntries: Set<PassthroughEntry> = []
-
-    /// Tracks keyCodes whose keyDown was passed through to the foreground app.
-    /// We unconditionally pass their keyUp too, so the destination app never
-    /// sees a stuck key — even if the user released the modifier first
-    /// (which strips the mod flag from the subsequent keyUp).
-    private var passthroughActiveKeys: Set<CGKeyCode> = []
-
     private func rebuildKeyTables() {
         assert(Thread.isMainThread, "rebuildKeyTables must run on main")
         let c = config
@@ -363,32 +340,6 @@ final class EventTapManager: @unchecked Sendable {
         }
 
         mouseController.speedLevel = c.speed
-
-        // Resolve passthrough whitelist. Skip entries with unknown modifier
-        // or unknown key, and warn — silent drops would be very confusing
-        // when a user adds a typo'd combo and wonders why Cmd+C still gets
-        // eaten.
-        var resolved: Set<PassthroughEntry> = []
-        for combo in c.passthrough {
-            guard let mod = KeyMapping.modifierFlag(for: combo.modifier) else {
-                print("[mMouse] WARNING: passthrough modifier '\(combo.modifier)' unknown — skipping \(combo.modifier)+\(combo.key)")
-                continue
-            }
-            guard let kc = KeyMapping.keyCode(for: combo.key) else {
-                print("[mMouse] WARNING: passthrough key '\(combo.key)' unknown — skipping \(combo.modifier)+\(combo.key)")
-                continue
-            }
-            resolved.insert(PassthroughEntry(modifier: mod, keyCode: kc))
-        }
-        passthroughEntries = resolved
-    }
-
-    /// True if (flags, keyCode) exactly matches a whitelist entry. Modifier
-    /// match is on the masked subset only (Caps Lock / Fn don't affect it).
-    private func matchesPassthrough(flags: CGEventFlags, keyCode: CGKeyCode) -> Bool {
-        guard !passthroughEntries.isEmpty else { return false }
-        let actualMods = flags.intersection(relevantModifierMask)
-        return passthroughEntries.contains(PassthroughEntry(modifier: actualMods, keyCode: keyCode))
     }
 
     // MARK: - Activation state machine
@@ -452,10 +403,6 @@ final class EventTapManager: @unchecked Sendable {
         enterClickResetWork?.cancel()
         enterClickResetWork = nil
         heldScroll.removeAll()
-        // Outside active mode, every keyDown/Up is passed through anyway, so
-        // a leftover entry here would be a no-op. Clearing it just keeps the
-        // set tidy and avoids unbounded growth if somehow keyDowns leaked.
-        passthroughActiveKeys.removeAll()
         mouseController.stopScroll()
         print("[mMouse] mMouse mode: \(isActive ? "ACTIVE" : "inactive")")
     }
@@ -632,26 +579,6 @@ final class EventTapManager: @unchecked Sendable {
             return nil
         }
 
-        // --- Whitelist passthrough (Cmd+C, Cmd+V, etc.) ---
-        //
-        // Runs BEFORE drag/movement/Enter checks so a configured combo wins
-        // over the default consume — e.g. Cmd+V passes through even though
-        // `v` would otherwise toggle drag mode.
-        //
-        // keyDown: match on (modifier subset, keyCode). If matched, remember
-        // the keyCode so the matching keyUp also passes through (even if the
-        // user releases the modifier first and the keyUp arrives bare).
-        if type == .keyDown {
-            if matchesPassthrough(flags: flags, keyCode: keyCode) {
-                passthroughActiveKeys.insert(keyCode)
-                return Unmanaged.passUnretained(event)
-            }
-        } else if type == .keyUp {
-            if passthroughActiveKeys.remove(keyCode) != nil {
-                return Unmanaged.passUnretained(event)
-            }
-        }
-
         if movementKeyCodes.contains(keyCode) {
             // On keyUp, ALWAYS release from whichever bucket holds the key —
             // regardless of current modifier state. This prevents stuck
@@ -699,8 +626,11 @@ final class EventTapManager: @unchecked Sendable {
             return nil
         }
 
-        // Lock everything else: typing, system shortcuts (Cmd+Tab/Q/W), etc.
-        return nil
+        // PRIORITY MODEL: mMouse's own keys (arrows, Enter, Esc, activation)
+        // are claimed above. Everything else — typing, system shortcuts
+        // (Cmd+C/V/Q/Tab, Cmd+Shift+4, etc.) — passes through to the
+        // foreground app as if mMouse weren't active. No more whitelist.
+        return Unmanaged.passUnretained(event)
     }
 
     private func handleMovementKey(keyCode: CGKeyCode, type: CGEventType, isRepeat: Bool) {
