@@ -10,7 +10,7 @@ Keyboard-driven cursor control for macOS. Goal: drop the physical mouse as much 
   - `Enter` → left click
   - `Enter × 2` (twice within 400ms) → double click
   - `Shift + Enter` → right click
-- **Scroll** *(hardcoded)*: `Option + movement_key` → scroll wheel events at the cursor
+- **Scroll** *(hardcoded)*: `Cmd + movement_key` → scroll wheel events at the cursor
 - **Drag / block selection** *(hardcoded)*: hold `Shift + arrow` → mouseDown, drag while held, release Shift → mouseUp
 - **🔒 Full keyboard lockdown** while active: every key not listed above is consumed — no shortcut leaks to other apps
 - **Speed**: integer 1..10 (default 3); quadratic curve + acceleration on hold
@@ -47,13 +47,13 @@ First launch:
 | Left click | `Enter` (mode stays active) |
 | Double click | `Enter × 2` (within 400ms) |
 | Right click | `Shift + Enter` |
-| Scroll up | `Option + ↑` (hold for continuous scroll) |
-| Scroll down | `Option + ↓` |
-| Scroll left | `Option + ←` |
-| Scroll right | `Option + →` |
+| Scroll up | `Cmd + ↑` (hold for continuous scroll) |
+| Scroll down | `Cmd + ↓` |
+| Scroll left | `Cmd + ←` |
+| Scroll right | `Cmd + →` |
 | **Hold-to-drag** (block select / screenshot) | `Shift + arrow` (drag while held, release Shift = mouseUp) |
 | Commit drag (alt) | `Enter` |
-| Speed boost (5× by default) | hold `Cmd` while moving |
+| Speed boost (5× by default) | hold `Option` while moving (configurable) |
 | **Panic exit** | `Esc` (auto-commits drag if in progress) |
 
 Menu bar:
@@ -133,7 +133,7 @@ File: `~/.mMouse.json` (created on first launch).
 | `speedBoost.multiplier` | Speed multiplier while boost modifier held | number (default `5`) |
 | `passthrough` | Array of `{modifier, key}` combos that pass through to the foreground app in active mode | array (default = Cmd+C/V/X/A/Z); `[]` = lock down everything |
 
-> **Hardcoded** (not configurable): `Enter` / `Shift+Enter` (click), `Esc` (panic exit), `Shift + movement` (hold-to-drag), `Option + movement` (scroll). The movement keys must NOT collide with `Enter` — mMouse warns and disarms the colliding direction if you try.
+> **Hardcoded** (not configurable): `Enter` / `Shift+Enter` (click), `Esc` (panic exit), `Shift + movement` (hold-to-drag), `Cmd + movement` (scroll). The movement keys must NOT collide with `Enter` — mMouse warns and disarms the colliding direction if you try. `speedBoost.modifier` should not include Cmd or be Shift exactly — those would silently lose to scroll / drag and never fire.
 
 ### Speed cheat sheet
 
@@ -147,7 +147,7 @@ Per-tick = `0.5 × speed²` px at 60 Hz baseline, modulated by an acceleration c
 | 7 | ~20 px | ~2000 px | Big screens |
 | 10 | ~50 px | ~4500 px | Fastest crossing |
 
-**Speed boost** (default `Cmd`): hold the boost modifier + arrow → speed × 5 (configurable). Use it to cross the screen quickly without changing the base speed.
+**Speed boost** (default `Option`): hold the boost modifier + arrow → speed × 5 (configurable). Use it to cross the screen quickly without changing the base speed. Don't set this to Cmd (collides with scroll) or Shift (collides with drag).
 
 ### Example: activate with `Option + Space` (single press)
 
@@ -184,7 +184,7 @@ Per-tick = `0.5 × speed²` px at 60 Hz baseline, modulated by an acceleration c
 ## Trade-offs
 
 - For multi-tap combos (`repeatCount > 1`), the first press is **always suppressed** (we don't know yet if it's the start of a sequence). If the follow-ups don't arrive within `windowMs`, the press is dropped. Single-press combos (`repeatCount: 1`, the default) don't have this trade-off.
-- While active: **every key** is locked except movement / Shift+movement (drag) / Option+movement (scroll) / Cmd+movement (speed boost) / Enter / Shift+Enter (right click) / Esc / activation / passthrough whitelist. Everything else is consumed.
+- While active: **every key** is locked except movement / Shift+movement (drag) / Cmd+movement (scroll) / Option+movement (speed boost) / Enter / Shift+Enter (right click) / Esc / activation / passthrough whitelist. Everything else is consumed.
 - Click does not auto-exit the mode — press the activation combo again or `Esc` to leave.
 - Because the real cursor moves while you aim, hover effects (tooltips, link previews, button highlights) will fire just like with a physical mouse. This is intentional: you see exactly what the click will hit.
 - The activation, movement, and click handlers **cannot share keys**. mMouse warns and disarms the offender at config-load time.

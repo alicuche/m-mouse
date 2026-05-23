@@ -39,7 +39,10 @@ struct SpeedBoostConfig: Codable, Equatable {
     /// Speed multiplier when boost modifier is held (default 5×).
     var multiplier: Double
 
-    static let `default` = SpeedBoostConfig(modifier: "command", multiplier: 5)
+    // Default is Option because Cmd is now hardcoded for scroll
+    // (Cmd + arrow). Users can still override to whatever modifier they want;
+    // setting "command" will silently lose to the scroll branch in active mode.
+    static let `default` = SpeedBoostConfig(modifier: "option", multiplier: 5)
 }
 
 /// A keyboard shortcut that is allowed to pass through to other apps even

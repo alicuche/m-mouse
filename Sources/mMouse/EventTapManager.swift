@@ -331,7 +331,7 @@ final class EventTapManager: @unchecked Sendable {
         movementKeyCodes = Set([keys.upKey, keys.downKey, keys.leftKey, keys.rightKey]
             .filter { $0 != EventTapManager.unmappedKey })
 
-        // Speed boost modifier (e.g. Cmd held + arrow = 5× speed)
+        // Speed boost modifier (e.g. Option held + arrow = 5× speed)
         if let mod = KeyMapping.modifierFlag(for: c.speedBoost.modifier) {
             keys.boostModifier = mod
         } else {
@@ -339,6 +339,18 @@ final class EventTapManager: @unchecked Sendable {
             keys.boostModifier = []
         }
         keys.boostMultiplier = max(1.0, c.speedBoost.multiplier)
+
+        // Foot-gun: Cmd is now hardcoded for scroll. If the user's boost
+        // modifier collides with Cmd, boost will silently never fire because
+        // the scroll branch in handle() short-circuits first. Warn so they
+        // can pick a different modifier (Option works, as does any combo).
+        if keys.boostModifier.contains(.maskCommand) {
+            print("[mMouse] WARNING: speedBoost.modifier '\(c.speedBoost.modifier)' includes Command, which is hardcoded for scroll — boost will not fire. Pick a different modifier (e.g. 'option').")
+        }
+        // Same hazard if boost modifier matches Shift exactly (Shift = drag).
+        if keys.boostModifier == .maskShift {
+            print("[mMouse] WARNING: speedBoost.modifier 'shift' collides with the hardcoded drag trigger — boost will not fire. Pick a different modifier.")
+        }
 
         // Foot-gun guard: with a `none` modifier, an activation key that also
         // appears in movement keys would consume every press of that key,
@@ -657,10 +669,10 @@ final class EventTapManager: @unchecked Sendable {
             if flags.contains(.maskShift) && !mouseController.isDragging {
                 enterDragMode(source: .shiftHold)
             }
-            // Option + movement = SCROLL at cursor. Suppressed while dragging
-            // so a Shift+Option+arrow combo doesn't try to scroll on top of
+            // Cmd + movement = SCROLL at cursor. Suppressed while dragging
+            // so a Shift+Cmd+arrow combo doesn't try to scroll on top of
             // the in-progress drag.
-            if flags.contains(.maskAlternate) && !mouseController.isDragging {
+            if flags.contains(.maskCommand) && !mouseController.isDragging {
                 handleScrollKey(keyCode: keyCode, type: type, isRepeat: isRepeat)
                 return nil
             }
