@@ -46,30 +46,61 @@ struct SpeedBoostConfig: Codable, Equatable {
 }
 
 
+struct GridComboConfig: Codable, Equatable {
+    /// Modifier for the grid-layer trigger (same syntax as activation modifier).
+    var modifier: String
+    /// Key that, with `modifier`, turns the grid layer on (also activates red
+    /// mode if it wasn't already).
+    var key: String
+
+    // Default Cmd+' — sibling of the Cmd+; activation combo (adjacent key).
+    static let `default` = GridComboConfig(modifier: "command", key: "'")
+}
+
+struct GridConfig: Codable, Equatable {
+    /// Combo that turns the grid layer on (on top of red mode).
+    var combo: GridComboConfig
+    /// Target cell size in points. Rows/cols are derived per-display so cells
+    /// stay roughly square on any screen (cols = round(W / targetCellPx)).
+    var targetCellPx: Int
+
+    static let `default` = GridConfig(combo: .default, targetCellPx: 150)
+}
+
 struct AppConfig: Codable, Equatable {
     var activationCombo: ActivationComboConfig
+    /// Extra activation combos — each toggles red mode on a single press (their
+    /// `repeatCount`/`windowMs` are ignored). Lets several shortcuts (e.g. both
+    /// Cmd+E and Cmd+Q) enter red mode.
+    var additionalActivationCombos: [ActivationComboConfig]
     var keys: KeyConfig
     /// Speed level 1..10 (1 = slowest, 10 = fastest)
     var speed: Int
     /// Modifier+multiplier for speed boost while moving (e.g. Option+arrow = 5×).
     var speedBoost: SpeedBoostConfig
+    /// Grid-jump overlay (Cmd+' → labelled matrix → 2 keys warp the cursor).
+    var grid: GridConfig
 
     static let `default` = AppConfig(
         activationCombo: .default,
+        additionalActivationCombos: [],
         keys: .default,
         speed: 3,
-        speedBoost: .default
+        speedBoost: .default,
+        grid: .default
     )
 
     enum CodingKeys: String, CodingKey {
-        case activationCombo, keys, speed, speedBoost
+        case activationCombo, additionalActivationCombos, keys, speed, speedBoost, grid
     }
 
-    init(activationCombo: ActivationComboConfig, keys: KeyConfig, speed: Int, speedBoost: SpeedBoostConfig) {
+    init(activationCombo: ActivationComboConfig, additionalActivationCombos: [ActivationComboConfig], keys: KeyConfig, speed: Int, speedBoost: SpeedBoostConfig, grid: GridConfig) {
         self.activationCombo = activationCombo
+        self.additionalActivationCombos = additionalActivationCombos
         self.keys = keys
         self.speed = speed
         self.speedBoost = speedBoost
+        self.grid = grid
     }
 
     /// Tolerant decoder so configs written before newer fields were added
@@ -79,9 +110,11 @@ struct AppConfig: Codable, Equatable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         activationCombo = try c.decode(ActivationComboConfig.self, forKey: .activationCombo)
+        additionalActivationCombos = try c.decodeIfPresent([ActivationComboConfig].self, forKey: .additionalActivationCombos) ?? []
         keys            = try c.decode(KeyConfig.self,              forKey: .keys)
         speed           = try c.decode(Int.self,                    forKey: .speed)
         speedBoost      = try c.decodeIfPresent(SpeedBoostConfig.self, forKey: .speedBoost) ?? .default
+        grid            = try c.decodeIfPresent(GridConfig.self,       forKey: .grid)       ?? .default
     }
 }
 
@@ -142,6 +175,7 @@ final class ConfigManager: @unchecked Sendable {
             loaded.speed = max(1, min(10, loaded.speed))
             loaded.activationCombo.repeatCount = max(1, min(10, loaded.activationCombo.repeatCount))
             loaded.activationCombo.windowMs    = max(50, min(5000, loaded.activationCombo.windowMs))
+            loaded.grid.targetCellPx           = max(60, min(400, loaded.grid.targetCellPx))
             config = loaded
             print("[mMouse] Config loaded from \(configURL.path)")
         } catch {

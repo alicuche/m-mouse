@@ -103,6 +103,28 @@ final class MouseController: @unchecked Sendable {
         stopTimer()
     }
 
+    // MARK: - Grid jump (warp to absolute position)
+
+    /// Warp the cursor to an absolute CG point (top-left origin), clamped to the
+    /// display it lands on. Posts a `.mouseMoved` so hover/highlight updates —
+    /// same mechanism as `tick()`. Used by the grid-jump overlay.
+    func warp(to point: CGPoint) {
+        let current = realCursorPosition()
+        let clamped = clampToDisplays(point, current: current)
+        CGWarpMouseCursorPosition(clamped)
+        postMouseEvent(.mouseMoved, at: clamped, button: .left, clickCount: 0)
+    }
+
+    /// Bounds (CG coords) of the display that contains `point`, falling back to
+    /// the first active display. Used to size the grid overlay to the display
+    /// the cursor currently sits on.
+    func displayBounds(containing point: CGPoint) -> CGRect {
+        for bounds in cachedDisplayBounds where bounds.contains(point) {
+            return bounds
+        }
+        return cachedDisplayBounds.first ?? CGDisplayBounds(CGMainDisplayID())
+    }
+
     // MARK: - Click actions
 
     /// Post a left click at the current cursor position.

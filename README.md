@@ -4,7 +4,9 @@ Keyboard-driven cursor control for macOS. Goal: drop the physical mouse as much 
 
 ## Features
 
-- **Activation**: `Cmd + ;` toggles mMouse mode (single press by default; configurable)
+- **Activation**: `Cmd + ;` (single press by default; configurable) turns on **red mode + the grid layer together** — the red follow-badge AND a translucent labelled matrix appear at once. You can add more activation combos via config (e.g. both `Cmd + E` and `Cmd + Q`).
+- **Grid layer**: while on, type a 2-letter cell code (row letter + column letter, e.g. `BC`) to warp the cursor straight to that cell — coarse-jump anywhere on screen, then fine-tune with arrows (which step cell-by-cell). `Shift` + the second letter also clicks. `Cmd + '` re-opens the layer if you peeled it off. 
+- **Layered exit**: `Esc` (or `Enter`) peels the grid layer off first (stays in red mode); then in plain red mode, `Esc` exits, or **`Enter` left-clicks and exits in one go**.
 - **Direct cursor control**: arrow keys move the real system cursor — what you see is what gets clicked
 - **Click** *(hardcoded)*:
   - `Enter` → left click
@@ -39,7 +41,15 @@ First launch:
 
 | Action | Keys |
 |---|---|
-| **Enable / disable mMouse** | `Cmd + ;` |
+| **Activate (red + grid layer)** | `Cmd + ;` (also `Cmd + E` / `Cmd + Q` if configured) |
+| Re-open grid layer (after peeling) | `Cmd + '` |
+| **Grid jump** (warp to a cell) | with layer on: type row letter + column letter (e.g. `BC`) |
+| Grid jump **+ click** | row letter → `Shift` + column letter |
+| **Step hover cell** (layer on) | arrow keys → jump one cell at a time; cursor snaps to the new cell's centre |
+| Grid: re-pick row | `Backspace` (clears the buffered first letter) |
+| Peel grid layer off (stay in red) | `Esc` or `Enter` (no click) |
+| **Red mode `Enter`** (no layer) | left-click **and** exit red mode immediately |
+| Exit red mode (no click) | `Esc` |
 | Up | `↑` |
 | Down | `↓` |
 | Left | `←` |
@@ -79,9 +89,23 @@ Perfect for selecting a screenshot region after `Cmd+Shift+4`, lasso-selecting f
 
 Apps see the Shift modifier held during the drag, so Shift+drag semantics (e.g. extend a text-editor selection, snap to angle in design tools) work as expected.
 
+### Grid layer / grid jump
+
+The grid layer is an **opt-in on top of red mode**. Press `Cmd + '` (configurable) and a translucent labelled matrix appears over the display the cursor is on — if red mode wasn't on yet, this turns it on too. The screen is split into a grid sized so cells stay roughly square (~150px target, configurable via `grid.targetCellPx`); each cell carries a two-letter code — the **first letter is its row**, the **second its column** (e.g. `BC` = row B, column C).
+
+- Press the **first letter** → every other row dims so only the candidate columns remain bright.
+- Press the **second letter** → the cursor warps to that cell's centre. The layer **stays up** so you can immediately jump again or fine-tune with arrows.
+- Hold **`Shift`** on the second letter → warp **and** left-click in one shot.
+- **Arrow keys step cell-by-cell**: while the layer is on, a bare arrow moves the hover cell one cell over and the cursor snaps to that cell's centre — discrete jumps, not the slow continuous glide. (Cmd+arrow still scrolls, Shift+arrow still drags.)
+- `Backspace` re-picks the row; a half-entered row resets itself after ~2s.
+
+The cell the cursor currently sits in is flooded in pale neon yellow and tracks the cursor as you move, so you always know where you are ("I'm in `BC`, I want `FJ`"). The point is coarse-jump first (kill the long travel), then either type the next cell or step with arrows — much faster than crawling the cursor across the whole screen.
+
+**Exit is layered.** With the layer on, `Esc` or `Enter` peels it off (no click) and drops you back to plain red mode — badge + arrows, typing works again. Then in plain red mode: `Esc` exits, or **`Enter` left-clicks and exits in one motion** (handy: jump near a button with the layer, peel off, then `Enter` to click it and you're done). While the layer is on, bare letters drive the grid so you can't type them into the foreground app — the moment you peel back to red mode, plain letters pass through again.
+
 ### Key routing model
 
-mMouse consumes ONLY the keys it actually uses (arrows, Enter, Esc, the activation combo). Every other key — typing, Cmd+C, Cmd+S, Cmd+Tab, Cmd+Shift+4, anything — passes through unchanged. You can keep typing in chat, save in your editor, copy/paste, take screenshots etc. all while active mode is on.
+In **red mode** mMouse consumes only the keys it uses (arrows, Enter, Esc, the activation/grid combos); everything else — typing, Cmd+C, Cmd+S, Cmd+Tab, Cmd+Shift+4 — passes through. With the **grid layer** on, it additionally claims **bare/Shift letters** (grid jump); `Cmd`/`Ctrl`/`Option` shortcuts still pass through, but plain letters don't (use `Esc` to drop back to red mode and type).
 
 If a third-party shortcut collides with an mMouse key (e.g. an app uses bare arrows or bare Enter), mMouse wins — that's the priority guarantee. Deactivate (`Cmd+;` or `Esc`) when you need the raw key in the foreground app.
 
@@ -107,7 +131,7 @@ File: `~/.mMouse.json` (created on first launch).
 }
 ```
 
-> `speedBoost` is also configurable but omitted from the default JSON (defaults to `{ modifier: "option", multiplier: 5 }`). Add it to override.
+> `speedBoost` and `grid` are also configurable. `speedBoost` defaults to `{ modifier: "option", multiplier: 5 }`; `grid` defaults to `{ combo: { modifier: "command", key: "'" }, targetCellPx: 150 }`. Add either to override. (The default config file written on first launch includes `grid`.)
 
 > The legacy `passthrough` whitelist field is no longer used and is silently ignored if present in older configs. mMouse now passes through everything not in its own key set — see the routing model section above.
 
@@ -119,10 +143,14 @@ File: `~/.mMouse.json` (created on first launch).
 | `activationCombo.key` | The main key | `a-z`, `0-9`, named key (`space`, `tab`, `f1`...`f12`, `escape`, arrow names, `;`, `,`, ...) |
 | `activationCombo.repeatCount` | How many times the main key must be pressed | int ≥ 1 (default `1`) |
 | `activationCombo.windowMs` | Max ms between presses (only used when `repeatCount > 1`) | int 50..5000 |
+| `additionalActivationCombos` | Extra combos that also toggle red mode (single press each; `repeatCount`/`windowMs` ignored). E.g. add `Cmd+Q` alongside `Cmd+E`. | array of `{ modifier, key }` (default `[]`) |
 | `keys.up/down/left/right` | Movement keys | key name (e.g. `"up"`, `"k"`) |
 | `speed` | Movement speed | **int 1..10** |
 | `speedBoost.modifier` | Modifier that boosts movement speed | modifier name |
 | `speedBoost.multiplier` | Speed multiplier while boost modifier held | number (default `5`) |
+| `grid.combo.modifier` | Modifier for the grid-layer trigger | modifier name (default `command`) |
+| `grid.combo.key` | Key that turns the grid layer on | key name (default `'`) |
+| `grid.targetCellPx` | Grid layer cell size; rows/cols derived per-display so cells stay ~square | int 60..400 (default `150`) |
 
 > **Hardcoded** (not configurable): `Enter` / `Shift+Enter` (click), `Esc` (panic exit), `Shift + movement` (hold-to-drag), `Cmd + movement` (scroll). The movement keys must NOT collide with `Enter` — mMouse warns and disarms the colliding direction if you try. `speedBoost.modifier` should not include Cmd or be Shift exactly — those would silently lose to scroll / drag and never fire.
 

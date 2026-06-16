@@ -73,16 +73,24 @@ final class EventTapManager: @unchecked Sendable {
                 mouseController.stopScroll()
             }
             rebuildKeyTables()
+            // Re-show the grid layer if it's on so a changed targetCellPx (or a
+            // display change) is picked up immediately.
+            if gridShown {
+                hideGrid()
+                showGrid()
+            }
         }
     }
 
     private let mouseController: MouseController
     private let badge: CursorBadge
+    private let gridOverlay: GridOverlay
 
-    init(config: AppConfig, mouseController: MouseController, badge: CursorBadge) {
+    init(config: AppConfig, mouseController: MouseController, badge: CursorBadge, gridOverlay: GridOverlay) {
         self.config = config
         self.mouseController = mouseController
         self.badge = badge
+        self.gridOverlay = gridOverlay
         rebuildKeyTables()
     }
 
@@ -113,6 +121,8 @@ final class EventTapManager: @unchecked Sendable {
             guard let self = self else { return }
             let pos = self.currentCursorPosition()
             MainActor.assumeIsolated { self.badge.move(to: pos) }
+            // Keep the grid "you are here" outline tracking the cursor.
+            self.refreshCurrentCell()
         }
         timer.resume()
         badgeFollowTimer = timer
@@ -157,14 +167,29 @@ final class EventTapManager: @unchecked Sendable {
 
         let selfPtr = Unmanaged.passRetained(self).toOpaque()
 
-        guard let tap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .defaultTap,
-            eventsOfInterest: mask,
-            callback: mMouseEventTapCallback,
-            userInfo: selfPtr
-        ) else {
+        // Highest interception priority: tap at the HID level (where events
+        // enter the window server) with head-insert placement. This puts mMouse
+        // AHEAD of the system's own hotkey handling, so our activation / grid
+        // combos (and every key we claim in active mode) win over OS defaults
+        // like Spotlight, Cmd+Space, Cmd+Tab, etc. Fall back to the session-
+        // level tap if the HID tap can't be created (some restricted contexts).
+        func makeTap(at location: CGEventTapLocation) -> CFMachPort? {
+            CGEvent.tapCreate(
+                tap: location,
+                place: .headInsertEventTap,
+                options: .defaultTap,
+                eventsOfInterest: mask,
+                callback: mMouseEventTapCallback,
+                userInfo: selfPtr
+            )
+        }
+
+        let createdTap = makeTap(at: .cghidEventTap) ?? {
+            print("[mMouse] HID-level tap unavailable — falling back to session tap")
+            return makeTap(at: .cgSessionEventTap)
+        }()
+
+        guard let tap = createdTap else {
             // tapCreate failed — release the pointer we just retained.
             Unmanaged<EventTapManager>.fromOpaque(selfPtr).release()
             print("[mMouse] Failed to create event tap. Accessibility permission missing?")
@@ -186,6 +211,9 @@ final class EventTapManager: @unchecked Sendable {
     }
 
     private func teardownTap() {
+        // The grid layer is an independent NSPanel tied to active mode, NOT to
+        // the tap — recreating the tap (health recovery, sleep/wake) must leave
+        // it untouched so it survives across tap restarts while still active.
         if let source = runLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
         }
@@ -263,9 +291,24 @@ final class EventTapManager: @unchecked Sendable {
         var rightKey: CGKeyCode = EventTapManager.unmappedKey
         var boostModifier: CGEventFlags = []
         var boostMultiplier: Double = 1.0
+        var gridModifier: CGEventFlags = []
+        var gridKeyCode: CGKeyCode = EventTapManager.unmappedKey
+        /// Extra single-press activation combos (modifier + keycode).
+        var extraActivations: [(modifier: CGEventFlags, keyCode: CGKeyCode)] = []
     }
     private var keys = CachedKeys()
     private var movementKeyCodes: Set<CGKeyCode> = []
+
+    /// keyCode → letter index (0=A … 25=Z), built once. Used to decode grid
+    /// labels typed while the overlay is open.
+    private static let letterKeyCodes: [CGKeyCode: Int] = {
+        var map = [CGKeyCode: Int]()
+        for (i, ch) in Array("abcdefghijklmnopqrstuvwxyz").enumerated() {
+            if let kc = KeyMapping.keyCode(for: String(ch)) { map[kc] = i }
+        }
+        return map
+    }()
+    private let deleteKeyCode: CGKeyCode = CGKeyCode(kVK_Delete)
 
     private func rebuildKeyTables() {
         assert(Thread.isMainThread, "rebuildKeyTables must run on main")
@@ -339,6 +382,51 @@ final class EventTapManager: @unchecked Sendable {
             keys.activationKeyCode = EventTapManager.unmappedKey
         }
 
+        // Grid-layer trigger (e.g. Cmd+' turns the labelled-matrix layer on on
+        // top of red mode). Detected independently of the activation state
+        // machine so it never shares the press counter / window timer.
+        if let mod = KeyMapping.modifierFlag(for: c.grid.combo.modifier) {
+            keys.gridModifier = mod
+        } else {
+            print("[mMouse] WARNING: Unknown grid combo modifier '\(c.grid.combo.modifier)' — grid layer DISARMED")
+            keys.gridModifier = []
+            keys.gridKeyCode = EventTapManager.unmappedKey
+        }
+        if keys.gridModifier.isEmpty && c.grid.combo.modifier.lowercased() != "none" {
+            keys.gridKeyCode = EventTapManager.unmappedKey
+        } else {
+            keys.gridKeyCode = resolveKey(c.grid.combo.key, role: "grid combo key")
+        }
+        // Foot-gun guards: a grid key colliding with movement/Enter/Esc, a bare
+        // letter (those drive jumps while the layer is on), or the activation
+        // combo would be shadowed or hijack those keys.
+        if keys.gridKeyCode != EventTapManager.unmappedKey {
+            if keys.gridKeyCode == enterKeyCode || keys.gridKeyCode == keypadEnterKeyCode
+                || keys.gridKeyCode == escapeKeyCode || movementKeyCodes.contains(keys.gridKeyCode) {
+                print("[mMouse] WARNING: grid key collides with a reserved key (Enter/Esc/movement) — grid layer DISARMED. Pick a different key.")
+                keys.gridKeyCode = EventTapManager.unmappedKey
+            } else if keys.gridModifier == keys.activationModifier && keys.gridKeyCode == keys.activationKeyCode {
+                print("[mMouse] WARNING: grid combo equals the activation combo — grid layer DISARMED. Use a different key/modifier.")
+                keys.gridKeyCode = EventTapManager.unmappedKey
+            }
+        }
+
+        // Extra activation combos (each a single-press toggle, e.g. Cmd+Q in
+        // addition to the primary Cmd+E). Invalid entries are skipped with a
+        // warning rather than disarming the whole list.
+        keys.extraActivations = c.additionalActivationCombos.compactMap { combo in
+            guard let mod = KeyMapping.modifierFlag(for: combo.modifier) else {
+                print("[mMouse] WARNING: Unknown modifier '\(combo.modifier)' in additionalActivationCombos — skipped")
+                return nil
+            }
+            if mod.isEmpty && combo.modifier.lowercased() != "none" { return nil }
+            guard let kc = KeyMapping.keyCode(for: combo.key) else {
+                print("[mMouse] WARNING: Unknown key '\(combo.key)' in additionalActivationCombos — skipped")
+                return nil
+            }
+            return (modifier: mod, keyCode: kc)
+        }
+
         mouseController.speedLevel = c.speed
     }
 
@@ -357,7 +445,7 @@ final class EventTapManager: @unchecked Sendable {
             activationPressCount = 0
             activationResetWork?.cancel()
             activationResetWork = nil
-            toggleActivation()
+            toggleActivationWithLayer()
         }
         return true
     }
@@ -377,11 +465,23 @@ final class EventTapManager: @unchecked Sendable {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
+    /// Activation combos (Cmd+E / Cmd+Q) bring up red mode AND the grid layer
+    /// together. Pressing again while active toggles everything off.
+    private func toggleActivationWithLayer() {
+        if isActive {
+            toggleActivation()       // deactivate (also hides the layer)
+        } else {
+            toggleActivation()       // red mode on (badge + timer)
+            showGrid()               // + grid layer
+        }
+    }
+
     private func toggleActivation() {
         isActive.toggle()
         if isActive {
-            // Show the small follow-badge anchored to the current cursor pos,
-            // then keep it in sync with cursor moves via the 60Hz timer.
+            // Red mode: show the follow-badge that tracks the cursor (60Hz
+            // timer). The grid LAYER is a separate opt-in (Cmd+') on top of
+            // this — it is NOT shown here.
             let pos = currentCursorPosition()
             MainActor.assumeIsolated { badge.show(at: pos) }
             startBadgeFollowTimer()
@@ -393,6 +493,8 @@ final class EventTapManager: @unchecked Sendable {
             // If still dragging when deactivating, commit the mouseUp first
             // so apps don't get stuck with a pending button-down event.
             cleanupDragIfNeeded()
+            // Exiting red mode hides the grid layer too (if it was on).
+            hideGrid()
             mouseController.releaseAll()
             heldMovement.removeAll()
             mouseController.setBoost(1.0)
@@ -506,6 +608,156 @@ final class EventTapManager: @unchecked Sendable {
         fireActionIndicators()
     }
 
+    // MARK: - Grid layer (opt-in on top of red mode)
+    //
+    // Red mode (Cmd+E) gives you the follow-badge + arrows/click/scroll, and
+    // bare letters still pass through (you can type). The grid LAYER (Cmd+')
+    // sits on top: while it's on, bare/Shift letters JUMP the cursor to a cell
+    // (row letter then column letter; Shift on the second also clicks), arrows
+    // still nudge. Esc peels the layer off first, then red mode.
+
+    private var gridShown: Bool = false
+    private var gridFirstLetter: Int?      // row index chosen by the first key
+    private var gridRows: Int = 0
+    private var gridCols: Int = 0
+    private var gridDisplayBounds: CGRect = .zero
+    private var gridCurrentCell: (row: Int, col: Int) = (-1, -1)
+    private var gridResetWork: DispatchWorkItem?
+
+    /// Turn the grid layer on (Cmd+'). Activates red mode first if needed, then
+    /// shows the layer on top. Idempotent if the layer is already up.
+    private func openLayer() {
+        guard keys.gridKeyCode != EventTapManager.unmappedKey else { return }
+        if !isActive { toggleActivation() }   // red mode on (badge + timer)
+        if !gridShown { showGrid() }
+    }
+
+    /// Show the grid layer over the cursor's current display. Sizes the matrix
+    /// so cells stay ~square (targetCellPx).
+    private func showGrid() {
+        let cursor = currentCursorPosition()
+        let bounds = mouseController.displayBounds(containing: cursor)
+        let cellPx = max(60, config.grid.targetCellPx)
+        gridDisplayBounds = bounds
+        gridCols = max(1, min(26, Int((bounds.width / CGFloat(cellPx)).rounded())))
+        gridRows = max(1, min(26, Int((bounds.height / CGFloat(cellPx)).rounded())))
+        gridFirstLetter = nil
+        let (curRow, curCol) = cell(forCursor: cursor)
+        gridCurrentCell = (curRow, curCol)
+        gridShown = true
+        let rows = gridRows, cols = gridCols
+        MainActor.assumeIsolated {
+            gridOverlay.show(on: bounds, rows: rows, cols: cols, currentRow: curRow, currentCol: curCol)
+        }
+        print("[mMouse] grid layer shown \(gridRows)x\(gridCols)")
+    }
+
+    /// Hide the grid layer + reset its entry state. Leaves red mode untouched.
+    /// Idempotent.
+    private func hideGrid() {
+        gridResetWork?.cancel()
+        gridResetWork = nil
+        gridFirstLetter = nil
+        gridCurrentCell = (-1, -1)
+        guard gridShown else { return }
+        gridShown = false
+        MainActor.assumeIsolated { gridOverlay.hide() }
+        print("[mMouse] grid layer hidden")
+    }
+
+    /// Grid cell (row, col) containing a cursor point. Clamped to the matrix.
+    private func cell(forCursor cursor: CGPoint) -> (Int, Int) {
+        guard gridCols > 0, gridRows > 0, gridDisplayBounds.width > 0 else { return (-1, -1) }
+        let colW = gridDisplayBounds.width / CGFloat(gridCols)
+        let rowH = gridDisplayBounds.height / CGFloat(gridRows)
+        let col = min(gridCols - 1, max(0, Int((cursor.x - gridDisplayBounds.minX) / colW)))
+        let row = min(gridRows - 1, max(0, Int((cursor.y - gridDisplayBounds.minY) / rowH)))
+        return (row, col)
+    }
+
+    /// Keep the "you are here" outline in sync with the cursor (called from the
+    /// follow timer). Cheap: GridOverlay only redraws when the cell changes.
+    private func refreshCurrentCell() {
+        guard isActive, gridShown else { return }
+        let (row, col) = cell(forCursor: currentCursorPosition())
+        guard row >= 0, (row, col) != gridCurrentCell else { return }
+        gridCurrentCell = (row, col)
+        MainActor.assumeIsolated { gridOverlay.updateCurrent(row: row, col: col) }
+    }
+
+    /// Handle a bare/Shift letter while active: build the row/col pair and jump.
+    /// Returns true if the key was a valid grid input (caller consumes it).
+    private func handleGridLetter(_ idx: Int, shiftHeld: Bool) {
+        if let row = gridFirstLetter {
+            // Second letter = column. Out-of-range → ignore (no dead-end).
+            guard idx < gridCols else { return }
+            gridFirstLetter = nil
+            gridResetWork?.cancel(); gridResetWork = nil
+            let centre = MainActor.assumeIsolated { () -> CGPoint in
+                gridOverlay.highlight(row: nil)        // un-dim, layer stays up
+                return gridOverlay.cellCentre(row: row, col: idx)
+            }
+            mouseController.warp(to: centre)
+            if shiftHeld {
+                mouseController.click(count: 1)
+                fireActionIndicators()
+            }
+            // Snap the "you are here" outline to where we landed.
+            gridCurrentCell = (-1, -1)
+            refreshCurrentCell()
+        } else {
+            // First letter = row. Out-of-range → ignore.
+            guard idx < gridRows else { return }
+            gridFirstLetter = idx
+            MainActor.assumeIsolated { gridOverlay.highlight(row: idx) }
+            scheduleGridReset()
+        }
+    }
+
+    /// Current cell, computing it from the live cursor position if it hasn't
+    /// been resolved yet.
+    private func ensureCurrentCell() -> (row: Int, col: Int) {
+        if gridCurrentCell.row >= 0 { return gridCurrentCell }
+        let cc = cell(forCursor: currentCursorPosition())
+        gridCurrentCell = cc
+        return cc
+    }
+
+    /// Arrow in layer mode = step the hover cell one cell in `direction` and
+    /// warp the cursor to that cell's centre (discrete cell-to-cell jumps, not
+    /// the slow continuous glide).
+    private func gridArrowStep(_ direction: MouseController.Direction) {
+        var (row, col) = ensureCurrentCell()
+        switch direction {
+        case .up:    row = max(0, row - 1)
+        case .down:  row = min(gridRows - 1, row + 1)
+        case .left:  col = max(0, col - 1)
+        case .right: col = min(gridCols - 1, col + 1)
+        }
+        guard (row, col) != gridCurrentCell else { return }   // already at the edge
+        gridCurrentCell = (row, col)
+        let centre = MainActor.assumeIsolated { () -> CGPoint in
+            gridOverlay.updateCurrent(row: row, col: col)
+            return gridOverlay.cellCentre(row: row, col: col)
+        }
+        mouseController.warp(to: centre)
+    }
+
+    /// Reset the first-letter buffer if the user hesitates, so a stale half-
+    /// entry can't combine with a much later keypress.
+    private func scheduleGridReset() {
+        gridResetWork?.cancel()
+        var work: DispatchWorkItem!
+        work = DispatchWorkItem { [weak self] in
+            guard let self = self, self.gridResetWork === work else { return }
+            self.gridFirstLetter = nil
+            self.gridResetWork = nil
+            MainActor.assumeIsolated { self.gridOverlay.highlight(row: nil) }
+        }
+        gridResetWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: work)
+    }
+
     // MARK: - Core callback
 
     fileprivate func handle(
@@ -550,6 +802,16 @@ final class EventTapManager: @unchecked Sendable {
         let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
         let flags = event.flags
 
+        // --- Grid-layer trigger (always armed, like activation). Turns the grid
+        // layer on (and red mode if it wasn't already) in one action. ---
+        if type == .keyDown && !isRepeat && keys.gridKeyCode != EventTapManager.unmappedKey {
+            let actualMods = flags.intersection(relevantModifierMask)
+            if actualMods == keys.gridModifier && keyCode == keys.gridKeyCode {
+                openLayer()
+                return nil
+            }
+        }
+
         // --- Activation sequence detection (always armed, regardless of active state) ---
         if type == .keyDown {
             // Exact match on the relevant modifier subset. Cmd+Shift+Right
@@ -561,25 +823,48 @@ final class EventTapManager: @unchecked Sendable {
             if handleActivationCandidate(modifierMatches: modMatch, keyCodeMatches: keyMatch, isRepeat: isRepeat) {
                 return nil
             }
+            // Extra activation combos — single press toggles red mode.
+            if !isRepeat && !keys.extraActivations.isEmpty {
+                let mods = flags.intersection(relevantModifierMask)
+                if keys.extraActivations.contains(where: { $0.modifier == mods && $0.keyCode == keyCode }) {
+                    print("[mMouse] extra activation combo — toggling")
+                    toggleActivationWithLayer()
+                    return nil
+                }
+            }
         }
 
         guard isActive else {
             return Unmanaged.passUnretained(event)
         }
 
-        // --- ACTIVE MODE: full keyboard lockdown ---
+        // --- ACTIVE MODE ---
 
-        // Hardcoded panic deactivate: Esc always exits active mode.
-        // (toggleActivation handles ending an in-progress drag automatically.)
+        // Esc peels modes off one layer at a time: grid layer first (stays in
+        // red mode), then red mode itself. If only red is on, Esc exits it.
         if keyCode == escapeKeyCode {
             if type == .keyDown && !isRepeat {
-                print("[mMouse] Esc pressed — deactivating")
-                toggleActivation()
+                if gridShown {
+                    print("[mMouse] Esc — closing grid layer")
+                    hideGrid()
+                } else {
+                    print("[mMouse] Esc — deactivating")
+                    toggleActivation()
+                }
             }
             return nil
         }
 
         if movementKeyCodes.contains(keyCode) {
+            // LAYER MODE: a bare arrow steps the hover cell one cell over and
+            // warps the cursor to its centre (discrete cell jumps). Cmd+arrow
+            // (scroll) and Shift+arrow (drag) keep their normal meaning.
+            if gridShown && !flags.contains(.maskCommand) && !flags.contains(.maskShift) {
+                if type == .keyDown, let dir = directionForMovementKey(keyCode) {
+                    gridArrowStep(dir)
+                }
+                return nil   // consume keyUp too — no continuous-move timer here
+            }
             // On keyUp, ALWAYS release from whichever bucket holds the key —
             // regardless of current modifier state. This prevents stuck
             // timers when the user toggles a modifier mid-hold (e.g. press j
@@ -617,19 +902,57 @@ final class EventTapManager: @unchecked Sendable {
                 // click semantics — would corrupt the drag state.
                 if mouseController.isDragging {
                     exitDragMode()
+                } else if gridShown {
+                    // Layer mode: Enter peels the grid layer off (stays in red
+                    // mode), no click — same as the first Esc peel.
+                    print("[mMouse] Enter — closing grid layer")
+                    hideGrid()
                 } else if flags.contains(.maskShift) {
                     handleRightClick()
                 } else {
-                    handleEnterClick()
+                    // Red mode (no layer): Enter left-clicks AND exits red mode
+                    // immediately.
+                    print("[mMouse] Enter — click + deactivate")
+                    mouseController.click(count: 1)
+                    fireActionIndicators()
+                    toggleActivation()
                 }
             }
             return nil
         }
 
-        // PRIORITY MODEL: mMouse's own keys (arrows, Enter, Esc, activation)
-        // are claimed above. Everything else — typing, system shortcuts
-        // (Cmd+C/V/Q/Tab, Cmd+Shift+4, etc.) — passes through to the
-        // foreground app as if mMouse weren't active. No more whitelist.
+        // The following two blocks apply ONLY when the grid layer is on. In
+        // plain red mode none of them fire, so letters/Backspace pass through
+        // and you can type normally.
+        if gridShown {
+            // Backspace clears a pending grid row (re-pick). Only claimed while
+            // a first letter is buffered — otherwise it passes through.
+            if keyCode == deleteKeyCode && gridFirstLetter != nil {
+                if type == .keyDown && !isRepeat {
+                    gridFirstLetter = nil
+                    gridResetWork?.cancel(); gridResetWork = nil
+                    MainActor.assumeIsolated { gridOverlay.highlight(row: nil) }
+                }
+                return nil
+            }
+
+            // GRID JUMP: a BARE (or Shift-) letter selects a cell — first key
+            // picks the row, second warps the cursor (Shift on the second also
+            // clicks). Cmd/Ctrl/Option + letter is NOT a grid key — it falls
+            // through to passthrough so Cmd+C/V/… keep working.
+            let nonShiftMods: CGEventFlags = [.maskCommand, .maskControl, .maskAlternate]
+            if flags.intersection(nonShiftMods).isEmpty, let idx = EventTapManager.letterKeyCodes[keyCode] {
+                if type == .keyDown && !isRepeat {
+                    handleGridLetter(idx, shiftHeld: flags.contains(.maskShift))
+                }
+                return nil
+            }
+        }
+
+        // PRIORITY MODEL: mMouse's own keys (arrows, Enter, Esc, activation, the
+        // grid combo, and — only while the layer is on — bare letters) are
+        // claimed above. Everything else (typing in red mode, digits,
+        // punctuation, system shortcuts) passes through to the foreground app.
         return Unmanaged.passUnretained(event)
     }
 
@@ -718,6 +1041,7 @@ final class EventTapManager: @unchecked Sendable {
         // unexpected event order could), still post the mouseUp so the app
         // doesn't get stuck.
         cleanupDragIfNeeded()
+        hideGrid()
     }
 
     func activateFromMenu() {
