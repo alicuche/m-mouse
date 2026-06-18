@@ -2,6 +2,9 @@
 
 Keyboard-driven cursor control for macOS. Goal: drop the physical mouse as much as possible.
 
+<img width="1512" height="982" alt="image" src="https://github.com/user-attachments/assets/2faa6d9a-ac08-41b2-aa56-5438343e1d0b" />
+
+
 ## Features
 
 - **Activation**: `Cmd + ;` (single press by default; configurable) turns on **red mode + the grid layer together** — the red follow-badge AND a translucent labelled matrix appear at once. You can add more activation combos via config (e.g. both `Cmd + E` and `Cmd + Q`).
