@@ -59,7 +59,8 @@ final class GridOverlay {
     /// Show the grid over `bounds` (CG coords) with the given matrix size.
     /// `currentRow`/`currentCol` mark the cell the cursor currently occupies
     /// (outlined distinctly to orient the user).
-    func show(on bounds: CGRect, rows: Int, cols: Int, currentRow: Int, currentCol: Int) {
+    func show(on bounds: CGRect, rows: Int, cols: Int, currentRow: Int, currentCol: Int,
+              customLabels: [GridCell: String]) {
         self.displayBounds = bounds
         self.rows = rows
         self.cols = cols
@@ -67,7 +68,8 @@ final class GridOverlay {
         panel.setFrame(Self.nsFrame(for: bounds), display: false)
         // Content view must fill the panel; reset its frame to the panel's size.
         gridView.frame = NSRect(origin: .zero, size: bounds.size)
-        gridView.configure(rows: rows, cols: cols, currentRow: currentRow, currentCol: currentCol)
+        gridView.configure(rows: rows, cols: cols, currentRow: currentRow, currentCol: currentCol,
+                           customCells: customLabels)
         gridView.highlightedRow = nil
         gridView.needsDisplay = true
 
@@ -131,13 +133,18 @@ private final class GridView: NSView {
     /// When set, all rows except this one are dimmed (post first keypress).
     var highlightedRow: Int? = nil
 
+    /// Cells with a pinned custom label (drawn pink instead of the default code).
+    private var customCells: [GridCell: String] = [:]
+
     override var isFlipped: Bool { false } // explicit NS (bottom-left) coords
 
-    func configure(rows: Int, cols: Int, currentRow: Int, currentCol: Int) {
+    func configure(rows: Int, cols: Int, currentRow: Int, currentCol: Int,
+                   customCells: [GridCell: String]) {
         self.rows = rows
         self.cols = cols
         self.currentRow = currentRow
         self.currentCol = currentCol
+        self.customCells = customCells
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -188,13 +195,16 @@ private final class GridView: NSView {
             let dimmed = (highlightedRow != nil && highlightedRow != r)
             for c in 0..<cols {
                 guard c < alphabet.count else { break }
-                let label = "\(alphabet[r])\(alphabet[c])"
+                // A pinned custom label overrides the default row+col code.
+                let custom = customCells[GridCell(row: r, col: c)]
+                let label = custom ?? "\(alphabet[r])\(alphabet[c])"
 
                 // Cell centre in NS coords: row 0 is the TOP, so flip via height.
                 let cx = (CGFloat(c) + 0.5) * cellW
                 let cy = h - (CGFloat(r) + 0.5) * cellH
 
-                drawLabel(label, centre: NSPoint(x: cx, y: cy), font: font, dimmed: dimmed)
+                drawLabel(label, centre: NSPoint(x: cx, y: cy), font: font,
+                          dimmed: dimmed, custom: custom != nil)
             }
         }
     }
@@ -203,9 +213,11 @@ private final class GridView: NSView {
     private static let hoverFill = NSColor(srgbRed: 0.85, green: 1.0, blue: 0.0, alpha: 0.28)
     /// Orange label pill.
     private static let pillFill = NSColor(srgbRed: 1.0, green: 0.55, blue: 0.0, alpha: 1.0)
+    /// Hot-pink pill for pinned custom labels, so they pop against the orange grid.
+    private static let customPillFill = NSColor(srgbRed: 1.0, green: 0.18, blue: 0.55, alpha: 1.0)
 
-    private func drawLabel(_ text: String, centre: NSPoint, font: NSFont, dimmed: Bool) {
-        // Black text on an orange pill.
+    private func drawLabel(_ text: String, centre: NSPoint, font: NSFont, dimmed: Bool, custom: Bool) {
+        // Black text on an orange (or pink, for custom) pill.
         let textColor = NSColor.black.withAlphaComponent(dimmed ? 0.30 : 1.0)
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font,
@@ -223,10 +235,14 @@ private final class GridView: NSView {
             height: textSize.height + padY * 2
         )
         let pillPath = NSBezierPath(roundedRect: pill, xRadius: 4, yRadius: 4)
-        Self.pillFill.withAlphaComponent(dimmed ? 0.22 : 0.92).setFill()
+        let fill = custom ? Self.customPillFill : Self.pillFill
+        fill.withAlphaComponent(dimmed ? 0.22 : 0.92).setFill()
         pillPath.fill()
         // Darker border to define the pill on bright backgrounds.
-        NSColor(srgbRed: 0.45, green: 0.20, blue: 0.0, alpha: dimmed ? 0.25 : 0.85).setStroke()
+        let border = custom
+            ? NSColor(srgbRed: 0.50, green: 0.0, blue: 0.25, alpha: dimmed ? 0.25 : 0.85)
+            : NSColor(srgbRed: 0.45, green: 0.20, blue: 0.0, alpha: dimmed ? 0.25 : 0.85)
+        border.setStroke()
         pillPath.lineWidth = 1
         pillPath.stroke()
 

@@ -299,12 +299,13 @@ final class EventTapManager: @unchecked Sendable {
     private var keys = CachedKeys()
     private var movementKeyCodes: Set<CGKeyCode> = []
 
-    /// keyCode → letter index (0=A … 25=Z), built once. Used to decode grid
-    /// labels typed while the overlay is open.
-    private static let letterKeyCodes: [CGKeyCode: Int] = {
-        var map = [CGKeyCode: Int]()
-        for (i, ch) in Array("abcdefghijklmnopqrstuvwxyz").enumerated() {
-            if let kc = KeyMapping.keyCode(for: String(ch)) { map[kc] = i }
+    /// keyCode → uppercase character (A–Z, 0–9), built once. Used to decode
+    /// keys typed while the grid overlay is open — letters drive row/column
+    /// jumps, and letters/digits together form custom labels (e.g. "S1", "11").
+    private static let gridKeyChars: [CGKeyCode: Character] = {
+        var map = [CGKeyCode: Character]()
+        for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789" {
+            if let kc = KeyMapping.keyCode(for: String(ch).lowercased()) { map[kc] = ch }
         }
         return map
     }()
@@ -617,12 +618,19 @@ final class EventTapManager: @unchecked Sendable {
     // still nudge. Esc peels the layer off first, then red mode.
 
     private var gridShown: Bool = false
-    private var gridFirstLetter: Int?      // row index chosen by the first key
+    private var gridFirstChar: Character?   // first key typed in the current sequence
     private var gridRows: Int = 0
     private var gridCols: Int = 0
     private var gridDisplayBounds: CGRect = .zero
     private var gridCurrentCell: (row: Int, col: Int) = (-1, -1)
     private var gridResetWork: DispatchWorkItem?
+
+    // Custom-label tables, rebuilt each time the grid is shown (they depend on
+    // the matrix size). `gridCustomCells` feeds the overlay's pink pills;
+    // `gridCustomByLabel` / `gridCustomFirstChars` drive typed-key matching.
+    private var gridCustomCells: [GridCell: String] = [:]
+    private var gridCustomByLabel: [String: GridCell] = [:]
+    private var gridCustomFirstChars: Set<Character> = []
 
     /// Turn the grid layer on (Cmd+'). Activates red mode first if needed, then
     /// shows the layer on top. Idempotent if the layer is already up.
@@ -637,19 +645,30 @@ final class EventTapManager: @unchecked Sendable {
     private func showGrid() {
         let cursor = currentCursorPosition()
         let bounds = mouseController.displayBounds(containing: cursor)
-        let cellPx = max(60, config.grid.targetCellPx)
+        let cellW = max(60, config.grid.targetCellPx)
+        let cellH = config.grid.targetCellHeightPx.map { max(30, $0) } ?? cellW
         gridDisplayBounds = bounds
-        gridCols = max(1, min(26, Int((bounds.width / CGFloat(cellPx)).rounded())))
-        gridRows = max(1, min(26, Int((bounds.height / CGFloat(cellPx)).rounded())))
-        gridFirstLetter = nil
+        gridCols = max(1, min(26, Int((bounds.width / CGFloat(cellW)).rounded())))
+        gridRows = max(1, min(26, Int((bounds.height / CGFloat(cellH)).rounded())))
+        gridFirstChar = nil
+
+        // Resolve custom labels for this matrix size (out-of-range cells drop).
+        let custom = GridLabels.resolveCustom(config.grid.customLabels, rows: gridRows, cols: gridCols)
+        gridCustomCells = custom
+        var byLabel = [String: GridCell]()
+        for (cell, label) in custom { byLabel[label] = cell }
+        gridCustomByLabel = byLabel
+        gridCustomFirstChars = Set(byLabel.keys.compactMap { $0.first })
+
         let (curRow, curCol) = cell(forCursor: cursor)
         gridCurrentCell = (curRow, curCol)
         gridShown = true
         let rows = gridRows, cols = gridCols
         MainActor.assumeIsolated {
-            gridOverlay.show(on: bounds, rows: rows, cols: cols, currentRow: curRow, currentCol: curCol)
+            gridOverlay.show(on: bounds, rows: rows, cols: cols, currentRow: curRow, currentCol: curCol,
+                             customLabels: custom)
         }
-        print("[mMouse] grid layer shown \(gridRows)x\(gridCols)")
+        print("[mMouse] grid layer shown \(gridRows)x\(gridCols), \(custom.count) custom label(s)")
     }
 
     /// Hide the grid layer + reset its entry state. Leaves red mode untouched.
@@ -657,7 +676,7 @@ final class EventTapManager: @unchecked Sendable {
     private func hideGrid() {
         gridResetWork?.cancel()
         gridResetWork = nil
-        gridFirstLetter = nil
+        gridFirstChar = nil
         gridCurrentCell = (-1, -1)
         guard gridShown else { return }
         gridShown = false
@@ -685,33 +704,63 @@ final class EventTapManager: @unchecked Sendable {
         MainActor.assumeIsolated { gridOverlay.updateCurrent(row: row, col: col) }
     }
 
-    /// Handle a bare/Shift letter while active: build the row/col pair and jump.
-    /// Returns true if the key was a valid grid input (caller consumes it).
-    private func handleGridLetter(_ idx: Int, shiftHeld: Bool) {
-        if let row = gridFirstLetter {
-            // Second letter = column. Out-of-range → ignore (no dead-end).
-            guard idx < gridCols else { return }
-            gridFirstLetter = nil
+    /// Handle a bare/Shift grid key (letter or custom-label digit) while the
+    /// layer is on. A two-key sequence either completes a custom label (e.g.
+    /// "S1", "11" → warp to a pinned cell) or a normal row+column code. The
+    /// caller always consumes the key.
+    private func handleGridKey(_ ch: Character, shiftHeld: Bool) {
+        if let first = gridFirstChar {
+            // Second key — try to complete a sequence.
+            gridFirstChar = nil
             gridResetWork?.cancel(); gridResetWork = nil
-            let centre = MainActor.assumeIsolated { () -> CGPoint in
-                gridOverlay.highlight(row: nil)        // un-dim, layer stays up
-                return gridOverlay.cellCentre(row: row, col: idx)
+            MainActor.assumeIsolated { gridOverlay.highlight(row: nil) }
+
+            // A pinned custom label wins over the default row+column code.
+            if let cell = gridCustomByLabel[String([first, ch])] {
+                warpToCell(row: cell.row, col: cell.col, click: shiftHeld)
+            } else if let row = gridRowIndex(of: first), let col = gridColIndex(of: ch) {
+                warpToCell(row: row, col: col, click: shiftHeld)
             }
-            mouseController.warp(to: centre)
-            if shiftHeld {
-                mouseController.click(count: 1)
-                fireActionIndicators()
-            }
-            // Snap the "you are here" outline to where we landed.
-            gridCurrentCell = (-1, -1)
-            refreshCurrentCell()
-        } else {
-            // First letter = row. Out-of-range → ignore.
-            guard idx < gridRows else { return }
-            gridFirstLetter = idx
-            MainActor.assumeIsolated { gridOverlay.highlight(row: idx) }
-            scheduleGridReset()
+            // Anything else (e.g. an unfinished custom prefix) just resets.
+            return
         }
+
+        // First key: must start a custom label or pick a valid row, else ignore.
+        let row = gridRowIndex(of: ch)
+        guard gridCustomFirstChars.contains(ch) || row != nil else { return }
+        gridFirstChar = ch
+        if let row = row {
+            MainActor.assumeIsolated { gridOverlay.highlight(row: row) }
+        }
+        scheduleGridReset()
+    }
+
+    /// Letter → row index, but only if it's a real row in this grid.
+    private func gridRowIndex(of ch: Character) -> Int? {
+        guard let i = GridLabels.letterIndex(ch), i < gridRows else { return nil }
+        return i
+    }
+
+    /// Letter → column index, but only if it's a real column in this grid.
+    private func gridColIndex(of ch: Character) -> Int? {
+        guard let i = GridLabels.letterIndex(ch), i < gridCols else { return nil }
+        return i
+    }
+
+    /// Warp the cursor to a cell's centre, peeling the row-dim, optionally
+    /// clicking, and snapping the "you are here" outline to the landing cell.
+    private func warpToCell(row: Int, col: Int, click: Bool) {
+        let centre = MainActor.assumeIsolated { () -> CGPoint in
+            gridOverlay.highlight(row: nil)        // un-dim, layer stays up
+            return gridOverlay.cellCentre(row: row, col: col)
+        }
+        mouseController.warp(to: centre)
+        if click {
+            mouseController.click(count: 1)
+            fireActionIndicators()
+        }
+        gridCurrentCell = (-1, -1)
+        refreshCurrentCell()
     }
 
     /// Current cell, computing it from the live cursor position if it hasn't
@@ -750,7 +799,7 @@ final class EventTapManager: @unchecked Sendable {
         var work: DispatchWorkItem!
         work = DispatchWorkItem { [weak self] in
             guard let self = self, self.gridResetWork === work else { return }
-            self.gridFirstLetter = nil
+            self.gridFirstChar = nil
             self.gridResetWork = nil
             MainActor.assumeIsolated { self.gridOverlay.highlight(row: nil) }
         }
@@ -925,27 +974,32 @@ final class EventTapManager: @unchecked Sendable {
         // plain red mode none of them fire, so letters/Backspace pass through
         // and you can type normally.
         if gridShown {
-            // Backspace clears a pending grid row (re-pick). Only claimed while
-            // a first letter is buffered — otherwise it passes through.
-            if keyCode == deleteKeyCode && gridFirstLetter != nil {
+            // Backspace clears a pending grid sequence (re-pick). Only claimed
+            // while a first key is buffered — otherwise it passes through.
+            if keyCode == deleteKeyCode && gridFirstChar != nil {
                 if type == .keyDown && !isRepeat {
-                    gridFirstLetter = nil
+                    gridFirstChar = nil
                     gridResetWork?.cancel(); gridResetWork = nil
                     MainActor.assumeIsolated { gridOverlay.highlight(row: nil) }
                 }
                 return nil
             }
 
-            // GRID JUMP: a BARE (or Shift-) letter selects a cell — first key
-            // picks the row, second warps the cursor (Shift on the second also
-            // clicks). Cmd/Ctrl/Option + letter is NOT a grid key — it falls
-            // through to passthrough so Cmd+C/V/… keep working.
+            // GRID JUMP: a BARE (or Shift-) key selects a cell — first key picks
+            // a row (or starts a custom label), second warps the cursor (Shift on
+            // the second also clicks). Letters always engage; digits only when
+            // they're part of a custom label (e.g. "11") so plain digit input
+            // still passes through. Cmd/Ctrl/Option + key is NOT a grid key — it
+            // falls through to passthrough so Cmd+C/V/… keep working.
             let nonShiftMods: CGEventFlags = [.maskCommand, .maskControl, .maskAlternate]
-            if flags.intersection(nonShiftMods).isEmpty, let idx = EventTapManager.letterKeyCodes[keyCode] {
-                if type == .keyDown && !isRepeat {
-                    handleGridLetter(idx, shiftHeld: flags.contains(.maskShift))
+            if flags.intersection(nonShiftMods).isEmpty, let ch = EventTapManager.gridKeyChars[keyCode] {
+                let engages = ch.isLetter || gridFirstChar != nil || gridCustomFirstChars.contains(ch)
+                if engages {
+                    if type == .keyDown && !isRepeat {
+                        handleGridKey(ch, shiftHeld: flags.contains(.maskShift))
+                    }
+                    return nil
                 }
-                return nil
             }
         }
 

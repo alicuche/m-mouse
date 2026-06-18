@@ -4,11 +4,27 @@ Keyboard-driven cursor control for macOS. Goal: drop the physical mouse as much 
 
 <img width="1512" height="982" alt="image" src="https://github.com/user-attachments/assets/2faa6d9a-ac08-41b2-aa56-5438343e1d0b" />
 
+A menu-bar app: press a combo to enter **red mode**, then drive the real system cursor with the keyboard — arrows to move, `Enter` to click, `Cmd+arrow` to scroll, `Shift+arrow` to drag-select. On top of that, a **grid layer** paints a labelled matrix over the screen so you can warp the cursor anywhere in two keystrokes, with optional **custom pink labels** for the spots you hit most.
+
+## Quick start
+
+```bash
+git clone <repo-url> mMouse && cd mMouse
+make install                       # build release + install to /Applications
+open /Applications/mMouse.app
+```
+
+Grant Accessibility when prompted (see [Install](#install-end-users)), then:
+
+1. Press **`Cmd + ;`** → red follow-dot + a labelled grid appear.
+2. Type a cell's two letters (e.g. `BC`) → cursor warps there. Type a **pink** label (e.g. `S1`) for a pinned cell.
+3. Arrows fine-tune (step cell-by-cell), **`Enter`** clicks, **`Esc`** backs out.
 
 ## Features
 
 - **Activation**: `Cmd + ;` (single press by default; configurable) turns on **red mode + the grid layer together** — the red follow-badge AND a translucent labelled matrix appear at once. You can add more activation combos via config (e.g. both `Cmd + E` and `Cmd + Q`).
-- **Grid layer**: while on, type a 2-letter cell code (row letter + column letter, e.g. `BC`) to warp the cursor straight to that cell — coarse-jump anywhere on screen, then fine-tune with arrows (which step cell-by-cell). `Shift` + the second letter also clicks. `Cmd + '` re-opens the layer if you peeled it off. 
+- **Grid layer**: while on, type a 2-letter cell code (row letter + column letter, e.g. `BC`) to warp the cursor straight to that cell — coarse-jump anywhere on screen, then fine-tune with arrows (which step cell-by-cell). `Shift` + the second letter also clicks. `Cmd + '` re-opens the layer if you peeled it off.
+- **Custom cell labels**: pin easy-to-remember labels (e.g. `S1`, `11`) onto specific cells. They render on a **pink pill** so they stand out, and you type the label to warp there. Fully configurable; ships with a handful of defaults.
 - **Layered exit**: `Esc` (or `Enter`) peels the grid layer off first (stays in red mode); then in plain red mode, `Esc` exits, or **`Enter` left-clicks and exits in one go**.
 - **Direct cursor control**: arrow keys move the real system cursor — what you see is what gets clicked
 - **Click** *(hardcoded)*:
@@ -17,16 +33,17 @@ Keyboard-driven cursor control for macOS. Goal: drop the physical mouse as much 
   - `Shift + Enter` → right click
 - **Scroll** *(hardcoded)*: `Cmd + movement_key` → scroll wheel events at the cursor
 - **Drag / block selection** *(hardcoded)*: hold `Shift + arrow` → mouseDown, drag while held, release Shift → mouseUp
-- **mMouse-priority routing**: only the keys mMouse actually uses (arrows, Enter, Esc, activation) are consumed. Every other shortcut — typing, Cmd+C/V/Q/Tab, Cmd+Shift+4, anything — passes straight through to the foreground app as if mMouse weren't running.
+- **mMouse-priority routing**: the keys mMouse uses are tapped at the **HID level** ahead of the OS, so they win even over system hotkeys (Spotlight, Cmd+Space, Cmd+Tab). Every *other* shortcut — typing, Cmd+C/V/Q/Tab, Cmd+Shift+4, anything — passes straight through to the foreground app as if mMouse weren't running.
 - **Speed**: integer 1..10 (default 3); quadratic curve + acceleration on hold
-- **Speed boost**: hold `Cmd` (configurable) while moving → 5× speed
+- **Speed boost**: hold `Option` (configurable) while moving → 5× speed
 - **Hot-reload** config — edit `~/.mMouse.json`, save, no restart
-- **Multi-monitor**: cursor clamped to the active display
+- **Multi-monitor**: grid opens on the display the cursor is on; cursor clamped to the active display
 - Menu bar app (no Dock icon)
 
 ## Install (end users)
 
 ```bash
+git clone <repo-url> mMouse && cd mMouse
 make install                # build release + install to /Applications
 open /Applications/mMouse.app
 ```
@@ -48,6 +65,7 @@ First launch:
 | Re-open grid layer (after peeling) | `Cmd + '` |
 | **Grid jump** (warp to a cell) | with layer on: type row letter + column letter (e.g. `BC`) |
 | Grid jump **+ click** | row letter → `Shift` + column letter |
+| **Custom-label jump** (pink cells) | with layer on: type the pinned label (e.g. `S1`, `11`); `Shift` on the last key also clicks |
 | **Step hover cell** (layer on) | arrow keys → jump one cell at a time; cursor snaps to the new cell's centre |
 | Grid: re-pick row | `Backspace` (clears the buffered first letter) |
 | Peel grid layer off (stay in red) | `Esc` or `Enter` (no click) |
@@ -69,9 +87,9 @@ First launch:
 | Speed boost (5× by default) | hold `Option` while moving (configurable) |
 | **Panic exit** | `Esc` (auto-commits drag if in progress) |
 
-Menu bar:
-- `⚪ mM` — inactive (typing works normally)
-- `🟢 mM` — active (every other key is locked; only the keys above do anything)
+Menu bar — an `mM` monogram icon:
+- **default tint** — inactive (typing works normally)
+- **red tint** — active (mMouse's keys are live; it briefly flashes on each click/drag to confirm the action). The red follow-dot next to the cursor is the on-screen cue for the same state.
 
 ### How it works in active mode
 
@@ -104,17 +122,41 @@ The grid layer is an **opt-in on top of red mode**. Press `Cmd + '` (configurabl
 
 The cell the cursor currently sits in is flooded in pale neon yellow and tracks the cursor as you move, so you always know where you are ("I'm in `BC`, I want `FJ`"). The point is coarse-jump first (kill the long travel), then either type the next cell or step with arrows — much faster than crawling the cursor across the whole screen.
 
+#### Custom cell labels (pink pills)
+
+Two-letter codes like `FJ` are easy to *read* but not always easy to *remember* or *type fast* for the spots you hit constantly. You can pin a custom label onto any cell — it renders on a **pink pill** (instead of the default orange) so it stands out, and typing the label warps the cursor there just like a normal code.
+
+Configure them in `grid.customLabels` (see [Config](#config)). Each entry maps a cell — identified by its **default two-letter code** — to the label you'd rather use:
+
+```json
+"grid": {
+  "customLabels": [
+    { "cell": "FA", "label": "S1" },
+    { "cell": "HA", "label": "S2" },
+    { "cell": "JC", "label": "11" },
+    { "cell": "LK", "label": "22" },
+    { "cell": "WI", "label": "33" }
+  ]
+}
+```
+
+- **`cell`** is the *original* code of the cell you want to rename (`"FA"` = row F, col A). That's how the cell is located, so it's stable regardless of what label you give it.
+- **`label`** is what's shown and what you type. Letters and digits both work — so labels like `S1`, `11`, `22` are fine even though the normal grid is letters-only.
+- Typing matches the same way: first key, then second key. `S1` = press `S` then `1`; `11` = press `1` then `1`. `Shift` on the last key also clicks. A digit that *isn't* part of a custom label still passes straight through.
+- Out-of-range entries (a cell that doesn't exist on the current display's grid) are silently skipped — the count of labels actually applied is printed when the layer opens.
+- This is **just a setting**. The five labels above are the built-in defaults (also written into the config on first launch); override the list to whatever you want, or set `"customLabels": []` to turn them all off.
+
 **Exit is layered.** With the layer on, `Esc` or `Enter` peels it off (no click) and drops you back to plain red mode — badge + arrows, typing works again. Then in plain red mode: `Esc` exits, or **`Enter` left-clicks and exits in one motion** (handy: jump near a button with the layer, peel off, then `Enter` to click it and you're done). While the layer is on, bare letters drive the grid so you can't type them into the foreground app — the moment you peel back to red mode, plain letters pass through again.
 
 ### Key routing model
 
-In **red mode** mMouse consumes only the keys it uses (arrows, Enter, Esc, the activation/grid combos); everything else — typing, Cmd+C, Cmd+S, Cmd+Tab, Cmd+Shift+4 — passes through. With the **grid layer** on, it additionally claims **bare/Shift letters** (grid jump); `Cmd`/`Ctrl`/`Option` shortcuts still pass through, but plain letters don't (use `Esc` to drop back to red mode and type).
+In **red mode** mMouse consumes only the keys it uses (arrows, Enter, Esc, the activation/grid combos); everything else — typing, Cmd+C, Cmd+S, Cmd+Tab, Cmd+Shift+4 — passes through. With the **grid layer** on, it additionally claims **bare/Shift letters** (grid jump), plus **digits that belong to a custom label** (e.g. `1` when an `11` label exists); `Cmd`/`Ctrl`/`Option` shortcuts and unrelated digits still pass through, but plain letters don't (use `Esc` to drop back to red mode and type).
 
 If a third-party shortcut collides with an mMouse key (e.g. an app uses bare arrows or bare Enter), mMouse wins — that's the priority guarantee. Deactivate (`Cmd+;` or `Esc`) when you need the raw key in the foreground app.
 
 ## Config
 
-File: `~/.mMouse.json` (created on first launch).
+File: `~/.mMouse.json` (created on first launch). The full default config, every field shown:
 
 ```json
 {
@@ -124,17 +166,35 @@ File: `~/.mMouse.json` (created on first launch).
     "repeatCount": 1,
     "windowMs": 500
   },
+  "additionalActivationCombos": [],
   "keys": {
     "up": "up",
     "down": "down",
     "left": "left",
     "right": "right"
   },
-  "speed": 3
+  "speed": 3,
+  "speedBoost": {
+    "modifier": "option",
+    "multiplier": 5
+  },
+  "grid": {
+    "combo": { "modifier": "command", "key": "'" },
+    "targetCellPx": 150,
+    "customLabels": [
+      { "cell": "FA", "label": "S1" },
+      { "cell": "HA", "label": "S2" },
+      { "cell": "JC", "label": "11" },
+      { "cell": "LK", "label": "22" },
+      { "cell": "WI", "label": "33" }
+    ]
+  }
 }
 ```
 
-> `speedBoost` and `grid` are also configurable. `speedBoost` defaults to `{ modifier: "option", multiplier: 5 }`; `grid` defaults to `{ combo: { modifier: "command", key: "'" }, targetCellPx: 150 }`. Add either to override. (The default config file written on first launch includes `grid`.)
+Every field is optional on load — **tolerant decode** means a config written by an older version (missing newer fields) still loads, and the missing fields fall back to their defaults. You only need to include the fields you want to change.
+
+> `grid.targetCellHeightPx` is an optional extra (not in the default file). When omitted, cells are square (height = `targetCellPx`). Set it *smaller* than the width to get wide, short cells — i.e. more rows. Handy on tall displays.
 
 > The legacy `passthrough` whitelist field is no longer used and is silently ignored if present in older configs. mMouse now passes through everything not in its own key set — see the routing model section above.
 
@@ -153,7 +213,9 @@ File: `~/.mMouse.json` (created on first launch).
 | `speedBoost.multiplier` | Speed multiplier while boost modifier held | number (default `5`) |
 | `grid.combo.modifier` | Modifier for the grid-layer trigger | modifier name (default `command`) |
 | `grid.combo.key` | Key that turns the grid layer on | key name (default `'`) |
-| `grid.targetCellPx` | Grid layer cell size; rows/cols derived per-display so cells stay ~square | int 60..400 (default `150`) |
+| `grid.targetCellPx` | Grid layer cell **width**; cols = round(displayWidth / this) | int 60..400 (default `150`) |
+| `grid.targetCellHeightPx` | Optional cell **height**; rows = round(displayHeight / this). Omit for square cells | int 30..400 (default: same as width) |
+| `grid.customLabels` | Pinned labels: each `{ cell, label }` renames a cell (by its default 2-letter `cell` code) to `label` (pink pill, typed to warp). `[]` disables all | array (default: 5 built-ins) |
 
 > **Hardcoded** (not configurable): `Enter` / `Shift+Enter` (click), `Esc` (panic exit), `Shift + movement` (hold-to-drag), `Cmd + movement` (scroll). The movement keys must NOT collide with `Enter` — mMouse warns and disarms the colliding direction if you try. `speedBoost.modifier` should not include Cmd or be Shift exactly — those would silently lose to scroll / drag and never fire.
 
@@ -272,16 +334,20 @@ make reinstall     # tcc-reset + install
 ## Architecture
 
 ```
-AppDelegate (@main)
-  ├── ConfigManager       — load/save/watch ~/.mMouse.json (file-level fswatch)
-  ├── MouseController     — CGEvent post (move/click/scroll/drag) directly
-  │                         on the real cursor, sub-pixel accumulator,
-  │                         multi-monitor clamp, acceleration curve
-  ├── EventTapManager     — CGEventTap + activation state machine + key
-  │                         lockdown + drag mode toggle
-  └── MenuBarManager      — NSStatusItem
+AppDelegate (@main)         — wiring, Accessibility permission flow, self-relaunch
+  ├── ConfigManager         — load/save/watch ~/.mMouse.json (file-level fswatch), hot-reload
+  ├── MouseController       — CGEvent post (move/click/scroll/drag) directly on the real
+  │                           cursor, sub-pixel accumulator, multi-monitor clamp, accel curve
+  ├── EventTapManager       — CGEventTap + activation state machine + key routing +
+  │                           drag/scroll bookkeeping + grid-jump modal
+  │     ├── CursorBadge      — small red follow-dot shown while active
+  │     └── GridOverlay      — full-screen labelled-matrix layer (grid jump)
+  └── MenuBarManager        — NSStatusItem
+
+Support: KeyMapping (key-name/modifier → keycode) · GridLabels (cell-code ↔ index,
+         custom-label resolution, shared by the overlay and the event tap)
 ```
 
-CGEventTap config: `.cgSessionEventTap` + `.headInsertEventTap` + `.defaultTap`. Not sandboxed (required for `.defaultTap` to consume events). Callback runs on the main RunLoop — all mutable state is touched only on main, no locks.
+CGEventTap config: `.cghidEventTap` + `.headInsertEventTap` + `.defaultTap` (falls back to `.cgSessionEventTap` if the HID-level tap can't be created). Tapping at the HID level with head-insert puts mMouse *ahead* of the system's own hotkey handling, so the keys it claims win even over OS defaults (Spotlight, Cmd+Space, Cmd+Tab). Not sandboxed (required for `.defaultTap` to consume events). Callback runs on the main RunLoop — all mutable state is touched only on main, no locks.
 
 Cursor movement is direct: each movement tick calls `CGWarpMouseCursorPosition` (which generates a `mouseMoved` event automatically). Clicks / drags / scrolls are dispatched at the current cursor position read via `CGEvent(source:nil)?.location` (with a `NSEvent.mouseLocation` fallback).

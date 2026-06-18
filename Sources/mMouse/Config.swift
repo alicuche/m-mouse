@@ -57,14 +57,66 @@ struct GridComboConfig: Codable, Equatable {
     static let `default` = GridComboConfig(modifier: "command", key: "'")
 }
 
+/// A pinned, fixed label for one grid cell. Replaces the default row+col code
+/// at `cell` with `label` — shown on a pink pill and typed to warp there.
+struct GridCustomLabel: Codable, Equatable {
+    /// The cell to relabel, identified by its DEFAULT two-letter code
+    /// (row letter + column letter, e.g. "FA" = row F, col A).
+    var cell: String
+    /// The custom label shown and typed instead (e.g. "S1", "11"). 1–2 chars
+    /// of letters/digits work best; typing it in the layer warps to the cell.
+    var label: String
+}
+
 struct GridConfig: Codable, Equatable {
     /// Combo that turns the grid layer on (on top of red mode).
     var combo: GridComboConfig
-    /// Target cell size in points. Rows/cols are derived per-display so cells
-    /// stay roughly square on any screen (cols = round(W / targetCellPx)).
+    /// Target cell WIDTH in points. cols = round(displayWidth / targetCellPx).
     var targetCellPx: Int
+    /// Optional target cell HEIGHT in points. When nil, cells are square (uses
+    /// targetCellPx for height too). Set it smaller than the width to get
+    /// wide rectangular cells (more rows). rows = round(displayHeight / this).
+    var targetCellHeightPx: Int? = nil
+    /// Fixed custom labels for specific cells — easier-to-remember shortcuts
+    /// that override the default row+col code (rendered pink). Typing a label
+    /// warps the cursor to its cell. Set to `[]` to disable all of them.
+    var customLabels: [GridCustomLabel] = GridConfig.defaultCustomLabels
+
+    /// Built-in pinned labels. Kept here (not just in the on-disk config) so
+    /// they survive a config reset and apply to configs written before the
+    /// field existed.
+    static let defaultCustomLabels: [GridCustomLabel] = [
+        GridCustomLabel(cell: "FA", label: "S1"),
+        GridCustomLabel(cell: "HA", label: "S2"),
+        GridCustomLabel(cell: "JC", label: "11"),
+        GridCustomLabel(cell: "LK", label: "22"),
+        GridCustomLabel(cell: "WI", label: "33"),
+    ]
 
     static let `default` = GridConfig(combo: .default, targetCellPx: 150)
+
+    enum CodingKeys: String, CodingKey {
+        case combo, targetCellPx, targetCellHeightPx, customLabels
+    }
+
+    init(combo: GridComboConfig, targetCellPx: Int, targetCellHeightPx: Int? = nil,
+         customLabels: [GridCustomLabel] = GridConfig.defaultCustomLabels) {
+        self.combo = combo
+        self.targetCellPx = targetCellPx
+        self.targetCellHeightPx = targetCellHeightPx
+        self.customLabels = customLabels
+    }
+
+    /// Tolerant decode: older configs lacking `customLabels`/`targetCellHeightPx`
+    /// keep loading and pick up the built-in pinned labels.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        combo = try c.decode(GridComboConfig.self, forKey: .combo)
+        targetCellPx = try c.decode(Int.self, forKey: .targetCellPx)
+        targetCellHeightPx = try c.decodeIfPresent(Int.self, forKey: .targetCellHeightPx)
+        customLabels = try c.decodeIfPresent([GridCustomLabel].self, forKey: .customLabels)
+            ?? GridConfig.defaultCustomLabels
+    }
 }
 
 struct AppConfig: Codable, Equatable {
@@ -176,6 +228,9 @@ final class ConfigManager: @unchecked Sendable {
             loaded.activationCombo.repeatCount = max(1, min(10, loaded.activationCombo.repeatCount))
             loaded.activationCombo.windowMs    = max(50, min(5000, loaded.activationCombo.windowMs))
             loaded.grid.targetCellPx           = max(60, min(400, loaded.grid.targetCellPx))
+            if let h = loaded.grid.targetCellHeightPx {
+                loaded.grid.targetCellHeightPx = max(30, min(400, h))
+            }
             config = loaded
             print("[mMouse] Config loaded from \(configURL.path)")
         } catch {
