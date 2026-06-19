@@ -4,7 +4,7 @@ Keyboard-driven cursor control for macOS. Goal: drop the physical mouse as much 
 
 <img width="1512" height="982" alt="image" src="https://github.com/user-attachments/assets/2faa6d9a-ac08-41b2-aa56-5438343e1d0b" />
 
-A menu-bar app: press a combo to enter **red mode**, then drive the real system cursor with the keyboard — arrows to move, `Enter` to click, `Cmd+arrow` to scroll, `Shift+arrow` to drag-select. On top of that, a **grid layer** paints a labelled matrix over the screen so you can warp the cursor anywhere in two keystrokes, with optional **custom pink labels** for the spots you hit most.
+A menu-bar app: press a combo to enter **red mode**, then drive the real system cursor with the keyboard — arrows to move, `Enter` to click, `Cmd+arrow` to scroll, `Shift+arrow` to drag-select. On top of that, a **grid layer** paints a labelled matrix over the screen so you can warp the cursor anywhere in two keystrokes, with optional **custom green labels** for the spots you hit most.
 
 ## Quick start
 
@@ -17,15 +17,15 @@ open /Applications/mMouse.app
 Grant Accessibility when prompted (see [Install](#install-end-users)), then:
 
 1. Press **`Cmd + ;`** → red follow-dot + a labelled grid appear.
-2. Type a cell's two letters (e.g. `BC`) → cursor warps there. Type a **pink** label (e.g. `S1`) for a pinned cell.
-3. Arrows fine-tune (step cell-by-cell), **`Enter`** clicks, **`Esc`** backs out.
+2. Type a cell's two letters (e.g. `BC`) → cursor warps there. Type a **green** label (e.g. `S1`) for a pinned cell.
+3. Arrows fine-tune (step cell-by-cell), **`Enter`** drops the grid (stay in red mode), **`Esc`** exits everything.
 
 ## Features
 
-- **Activation**: `Cmd + ;` (single press by default; configurable) turns on **red mode + the grid layer together** — the red follow-badge AND a translucent labelled matrix appear at once. You can add more activation combos via config (e.g. both `Cmd + E` and `Cmd + Q`).
+- **Activation**: `Cmd + ;` (single press by default; configurable) turns on **red mode + the grid layer together** — the red follow-badge AND a translucent labelled matrix appear at once. You can add more activation combos via config (e.g. both `Cmd + E` and `Cmd + Q`). Re-pressing the combo while active never exits — it just re-shows both layers (so it re-opens the grid if you'd peeled it back to red-only). `Esc` is the only full exit.
 - **Grid layer**: while on, type a 2-letter cell code (row letter + column letter, e.g. `BC`) to warp the cursor straight to that cell — coarse-jump anywhere on screen, then fine-tune with arrows (which step cell-by-cell). `Shift` + the second letter also clicks. `Cmd + '` re-opens the layer if you peeled it off.
-- **Custom cell labels**: pin easy-to-remember labels (e.g. `S1`, `11`) onto specific cells. They render on a **pink pill** so they stand out, and you type the label to warp there. Fully configurable; ships with a handful of defaults.
-- **Layered exit**: `Esc` (or `Enter`) peels the grid layer off first (stays in red mode); then in plain red mode, `Esc` exits, or **`Enter` left-clicks and exits in one go**.
+- **Custom cell labels**: pin easy-to-remember labels (e.g. `S1`, `11`) onto specific cells. They render on a **fluorescent-green pill** so they stand out, and you type the label to warp there. Fully configurable; ships with a handful of defaults.
+- **Layered exit**: `Enter` peels just the grid layer off (stays in red mode); `Esc` fully exits both layers at once. In plain red mode (no layer), **`Enter` left-clicks and exits in one go**, and `Esc` exits.
 - **Direct cursor control**: arrow keys move the real system cursor — what you see is what gets clicked
 - **Click** *(hardcoded)*:
   - `Enter` → left click
@@ -65,12 +65,12 @@ First launch:
 | Re-open grid layer (after peeling) | `Cmd + '` |
 | **Grid jump** (warp to a cell) | with layer on: type row letter + column letter (e.g. `BC`) |
 | Grid jump **+ click** | row letter → `Shift` + column letter |
-| **Custom-label jump** (pink cells) | with layer on: type the pinned label (e.g. `S1`, `11`); `Shift` on the last key also clicks |
+| **Custom-label jump** (green cells) | with layer on: type the pinned label (e.g. `S1`, `11`); `Shift` on the last key also clicks |
 | **Step hover cell** (layer on) | arrow keys → jump one cell at a time; cursor snaps to the new cell's centre |
 | Grid: re-pick row | `Backspace` (clears the buffered first letter) |
-| Peel grid layer off (stay in red) | `Esc` or `Enter` (no click) |
+| Peel grid layer off (stay in red) | `Enter` (no click) |
 | **Red mode `Enter`** (no layer) | left-click **and** exit red mode immediately |
-| Exit red mode (no click) | `Esc` |
+| Exit everything (both layers) | `Esc` |
 | Up | `↑` |
 | Down | `↓` |
 | Left | `←` |
@@ -96,7 +96,7 @@ Menu bar — an `mM` monogram icon:
 - The **real system cursor** is what moves. Arrow keys warp it; the cursor you see is the cursor that will click. No floating overlay, no aim icon.
 - `Enter` posts a left click at the cursor's current position.
 - `Shift + Enter` opens a context menu where the cursor is.
-- After clicking, mMouse stays active — keep moving / clicking / scrolling. Press the activation combo or `Esc` to exit.
+- After clicking, mMouse stays active — keep moving / clicking / scrolling. Press `Esc` to exit.
 
 ### Drag (block selection)
 
@@ -122,9 +122,9 @@ The grid layer is an **opt-in on top of red mode**. Press `Cmd + '` (configurabl
 
 The cell the cursor currently sits in is flooded in pale neon yellow and tracks the cursor as you move, so you always know where you are ("I'm in `BC`, I want `FJ`"). The point is coarse-jump first (kill the long travel), then either type the next cell or step with arrows — much faster than crawling the cursor across the whole screen.
 
-#### Custom cell labels (pink pills)
+#### Custom cell labels (green pills)
 
-Two-letter codes like `FJ` are easy to *read* but not always easy to *remember* or *type fast* for the spots you hit constantly. You can pin a custom label onto any cell — it renders on a **pink pill** (instead of the default orange) so it stands out, and typing the label warps the cursor there just like a normal code.
+Two-letter codes like `FJ` are easy to *read* but not always easy to *remember* or *type fast* for the spots you hit constantly. You can pin a custom label onto any cell — it renders on a **fluorescent-green pill** (instead of the default orange) so it stands out, and typing the label warps the cursor there just like a normal code.
 
 Configure them in `grid.customLabels` (see [Config](#config)). Each entry maps a cell — identified by its **default two-letter code** — to the label you'd rather use:
 
@@ -146,13 +146,13 @@ Configure them in `grid.customLabels` (see [Config](#config)). Each entry maps a
 - Out-of-range entries (a cell that doesn't exist on the current display's grid) are silently skipped — the count of labels actually applied is printed when the layer opens.
 - This is **just a setting**. The five labels above are the built-in defaults (also written into the config on first launch); override the list to whatever you want, or set `"customLabels": []` to turn them all off.
 
-**Exit is layered.** With the layer on, `Esc` or `Enter` peels it off (no click) and drops you back to plain red mode — badge + arrows, typing works again. Then in plain red mode: `Esc` exits, or **`Enter` left-clicks and exits in one motion** (handy: jump near a button with the layer, peel off, then `Enter` to click it and you're done). While the layer is on, bare letters drive the grid so you can't type them into the foreground app — the moment you peel back to red mode, plain letters pass through again.
+**Exit is layered.** With the layer on, `Enter` peels it off (no click) and drops you back to plain red mode — badge + arrows, typing works again; `Esc` instead exits both layers at once. Then in plain red mode: `Esc` exits, or **`Enter` left-clicks and exits in one motion** (handy: jump near a button with the layer, peel off, then `Enter` to click it and you're done). Re-pressing the activation combo never exits — it just re-shows both layers. While the layer is on, bare letters drive the grid so you can't type them into the foreground app — the moment you peel back to red mode, plain letters pass through again.
 
 ### Key routing model
 
 In **red mode** mMouse consumes only the keys it uses (arrows, Enter, Esc, the activation/grid combos); everything else — typing, Cmd+C, Cmd+S, Cmd+Tab, Cmd+Shift+4 — passes through. With the **grid layer** on, it additionally claims **bare/Shift letters** (grid jump), plus **digits that belong to a custom label** (e.g. `1` when an `11` label exists); `Cmd`/`Ctrl`/`Option` shortcuts and unrelated digits still pass through, but plain letters don't (use `Esc` to drop back to red mode and type).
 
-If a third-party shortcut collides with an mMouse key (e.g. an app uses bare arrows or bare Enter), mMouse wins — that's the priority guarantee. Deactivate (`Cmd+;` or `Esc`) when you need the raw key in the foreground app.
+If a third-party shortcut collides with an mMouse key (e.g. an app uses bare arrows or bare Enter), mMouse wins — that's the priority guarantee. Deactivate with `Esc` when you need the raw key in the foreground app.
 
 ## Config
 
@@ -215,7 +215,7 @@ Every field is optional on load — **tolerant decode** means a config written b
 | `grid.combo.key` | Key that turns the grid layer on | key name (default `'`) |
 | `grid.targetCellPx` | Grid layer cell **width**; cols = round(displayWidth / this) | int 60..400 (default `150`) |
 | `grid.targetCellHeightPx` | Optional cell **height**; rows = round(displayHeight / this). Omit for square cells | int 30..400 (default: same as width) |
-| `grid.customLabels` | Pinned labels: each `{ cell, label }` renames a cell (by its default 2-letter `cell` code) to `label` (pink pill, typed to warp). `[]` disables all | array (default: 5 built-ins) |
+| `grid.customLabels` | Pinned labels: each `{ cell, label }` renames a cell (by its default 2-letter `cell` code) to `label` (green pill, typed to warp). `[]` disables all | array (default: 5 built-ins) |
 
 > **Hardcoded** (not configurable): `Enter` / `Shift+Enter` (click), `Esc` (panic exit), `Shift + movement` (hold-to-drag), `Cmd + movement` (scroll). The movement keys must NOT collide with `Enter` — mMouse warns and disarms the colliding direction if you try. `speedBoost.modifier` should not include Cmd or be Shift exactly — those would silently lose to scroll / drag and never fire.
 
@@ -269,7 +269,7 @@ Per-tick = `0.5 × speed²` px at 60 Hz baseline, modulated by an acceleration c
 
 - For multi-tap combos (`repeatCount > 1`), the first press is **always suppressed** (we don't know yet if it's the start of a sequence). If the follow-ups don't arrive within `windowMs`, the press is dropped. Single-press combos (`repeatCount: 1`, the default) don't have this trade-off.
 - While active, only mMouse's own keys are intercepted: arrows (any modifier — movement / drag / scroll / boost), Enter / Shift+Enter (click / right-click), Esc (deactivate), and the activation combo. Every other key passes through to the foreground app unchanged. No whitelist to maintain.
-- Click does not auto-exit the mode — press the activation combo again or `Esc` to leave.
+- Click does not auto-exit the mode — press `Esc` to leave (re-pressing the activation combo just re-shows both layers, it never exits).
 - Because the real cursor moves while you aim, hover effects (tooltips, link previews, button highlights) will fire just like with a physical mouse. This is intentional: you see exactly what the click will hit.
 - The activation, movement, and click handlers **cannot share keys**. mMouse warns and disarms the offender at config-load time.
 
@@ -308,7 +308,7 @@ While typing a sudo password in Terminal, macOS auto-disables all event taps. mM
 mMouse listens for `NSWorkspace.didWakeNotification` and recreates the tap automatically. If it still doesn't work → menu bar → **Quit** → reopen.
 
 ### Stuck in active mode (activated but can't type)
-Press `Esc` (or whatever your activation combo is) to deactivate. Or click the menu bar `🟢 mM` → **Deactivate** — the physical mouse still works for this even while active.
+Press `Esc` to deactivate (the activation combo no longer exits — it re-shows both layers). Or click the menu bar `🟢 mM` → **Deactivate** — the physical mouse still works for this even while active.
 
 ### After granting permission the alert keeps appearing
 The app self-relaunches when it detects the grant. If it loops:

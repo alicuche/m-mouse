@@ -133,7 +133,7 @@ private final class GridView: NSView {
     /// When set, all rows except this one are dimmed (post first keypress).
     var highlightedRow: Int? = nil
 
-    /// Cells with a pinned custom label (drawn pink instead of the default code).
+    /// Cells with a pinned custom label (drawn green instead of the default code).
     private var customCells: [GridCell: String] = [:]
 
     override var isFlipped: Bool { false } // explicit NS (bottom-left) coords
@@ -213,11 +213,11 @@ private final class GridView: NSView {
     private static let hoverFill = NSColor(srgbRed: 0.85, green: 1.0, blue: 0.0, alpha: 0.28)
     /// Orange label pill.
     private static let pillFill = NSColor(srgbRed: 1.0, green: 0.55, blue: 0.0, alpha: 1.0)
-    /// Hot-pink pill for pinned custom labels, so they pop against the orange grid.
-    private static let customPillFill = NSColor(srgbRed: 1.0, green: 0.18, blue: 0.55, alpha: 1.0)
+    /// Fluorescent green pill for pinned custom labels, so they pop against the orange grid.
+    private static let customPillFill = NSColor(srgbRed: 0.22, green: 1.0, blue: 0.08, alpha: 1.0)
 
     private func drawLabel(_ text: String, centre: NSPoint, font: NSFont, dimmed: Bool, custom: Bool) {
-        // Black text on an orange (or pink, for custom) pill.
+        // Black text on an orange (or green, for custom) pill.
         let textColor = NSColor.black.withAlphaComponent(dimmed ? 0.30 : 1.0)
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font,
@@ -240,7 +240,7 @@ private final class GridView: NSView {
         pillPath.fill()
         // Darker border to define the pill on bright backgrounds.
         let border = custom
-            ? NSColor(srgbRed: 0.50, green: 0.0, blue: 0.25, alpha: dimmed ? 0.25 : 0.85)
+            ? NSColor(srgbRed: 0.0, green: 0.38, blue: 0.0, alpha: dimmed ? 0.25 : 0.85)
             : NSColor(srgbRed: 0.45, green: 0.20, blue: 0.0, alpha: dimmed ? 0.25 : 0.85)
         border.setStroke()
         pillPath.lineWidth = 1

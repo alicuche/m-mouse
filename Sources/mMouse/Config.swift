@@ -58,7 +58,7 @@ struct GridComboConfig: Codable, Equatable {
 }
 
 /// A pinned, fixed label for one grid cell. Replaces the default row+col code
-/// at `cell` with `label` — shown on a pink pill and typed to warp there.
+/// at `cell` with `label` — shown on a fluorescent-green pill and typed to warp there.
 struct GridCustomLabel: Codable, Equatable {
     /// The cell to relabel, identified by its DEFAULT two-letter code
     /// (row letter + column letter, e.g. "FA" = row F, col A).
@@ -78,7 +78,7 @@ struct GridConfig: Codable, Equatable {
     /// wide rectangular cells (more rows). rows = round(displayHeight / this).
     var targetCellHeightPx: Int? = nil
     /// Fixed custom labels for specific cells — easier-to-remember shortcuts
-    /// that override the default row+col code (rendered pink). Typing a label
+    /// that override the default row+col code (rendered green). Typing a label
     /// warps the cursor to its cell. Set to `[]` to disable all of them.
     var customLabels: [GridCustomLabel] = GridConfig.defaultCustomLabels
 

@@ -36,8 +36,10 @@ production checkout. Build/test here, then merge to `main`.
 - `MouseController.swift` — warps the real system cursor; click/scroll/drag/`warp(to:)`.
 - `CursorBadge.swift` — small follow-dot shown while active (NS/CG coord conversion lives here).
 - `GridOverlay.swift` — full-screen labelled-matrix layer (grid jump). Opt-in on top of
-  red mode via Cmd+'; while it's on, bare letters warp the cursor to a cell. Esc peels the
-  layer off first, then red mode (`gridShown` vs `isActive` in EventTapManager).
+  red mode via Cmd+'; while it's on, bare letters warp the cursor to a cell. The activation
+  combo (Cmd+E/Cmd+Q) brings up BOTH layers and keeps them on; Enter peels just the grid
+  layer (back to red-only); Esc fully exits both layers at once (`gridShown` vs `isActive`
+  in EventTapManager).
 - `Config.swift` — `~/.mMouse.json`, tolerant decode (`decodeIfPresent`), hot-reload.
 - `KeyMapping.swift` — key-name / modifier-name → keycode.
 - `AppDelegate.swift` — wiring, Accessibility permission flow, self-relaunch.

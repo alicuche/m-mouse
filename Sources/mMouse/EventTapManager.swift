@@ -446,7 +446,7 @@ final class EventTapManager: @unchecked Sendable {
             activationPressCount = 0
             activationResetWork?.cancel()
             activationResetWork = nil
-            toggleActivationWithLayer()
+            activateBothLayers()
         }
         return true
     }
@@ -466,15 +466,14 @@ final class EventTapManager: @unchecked Sendable {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
-    /// Activation combos (Cmd+E / Cmd+Q) bring up red mode AND the grid layer
-    /// together. Pressing again while active toggles everything off.
-    private func toggleActivationWithLayer() {
-        if isActive {
-            toggleActivation()       // deactivate (also hides the layer)
-        } else {
-            toggleActivation()       // red mode on (badge + timer)
-            showGrid()               // + grid layer
-        }
+    /// Activation combos (Cmd+E / Cmd+Q) turn BOTH layers on — red mode AND the
+    /// grid layer — and KEEP them on. Pressing the combo again while already
+    /// active does NOT exit; it just re-ensures both layers are shown. So if
+    /// Enter peeled the grid back to red-only, the combo re-opens the grid; if
+    /// both are already up it's a no-op. Esc is the only full exit.
+    private func activateBothLayers() {
+        if !isActive { toggleActivation() }   // red mode on (badge + timer)
+        if !gridShown { showGrid() }          // + grid layer on top
     }
 
     private func toggleActivation() {
@@ -615,7 +614,9 @@ final class EventTapManager: @unchecked Sendable {
     // bare letters still pass through (you can type). The grid LAYER (Cmd+')
     // sits on top: while it's on, bare/Shift letters JUMP the cursor to a cell
     // (row letter then column letter; Shift on the second also clicks), arrows
-    // still nudge. Esc peels the layer off first, then red mode.
+    // still nudge. The activation combo (Cmd+E/Cmd+Q) brings BOTH layers up and
+    // keeps them up. Enter peels just the grid layer off (back to red-only);
+    // Esc is the full exit, tearing down both layers at once.
 
     private var gridShown: Bool = false
     private var gridFirstChar: Character?   // first key typed in the current sequence
@@ -626,7 +627,7 @@ final class EventTapManager: @unchecked Sendable {
     private var gridResetWork: DispatchWorkItem?
 
     // Custom-label tables, rebuilt each time the grid is shown (they depend on
-    // the matrix size). `gridCustomCells` feeds the overlay's pink pills;
+    // the matrix size). `gridCustomCells` feeds the overlay's green pills;
     // `gridCustomByLabel` / `gridCustomFirstChars` drive typed-key matching.
     private var gridCustomCells: [GridCell: String] = [:]
     private var gridCustomByLabel: [String: GridCell] = [:]
@@ -876,8 +877,8 @@ final class EventTapManager: @unchecked Sendable {
             if !isRepeat && !keys.extraActivations.isEmpty {
                 let mods = flags.intersection(relevantModifierMask)
                 if keys.extraActivations.contains(where: { $0.modifier == mods && $0.keyCode == keyCode }) {
-                    print("[mMouse] extra activation combo — toggling")
-                    toggleActivationWithLayer()
+                    print("[mMouse] extra activation combo — show both layers")
+                    activateBothLayers()
                     return nil
                 }
             }
@@ -889,17 +890,14 @@ final class EventTapManager: @unchecked Sendable {
 
         // --- ACTIVE MODE ---
 
-        // Esc peels modes off one layer at a time: grid layer first (stays in
-        // red mode), then red mode itself. If only red is on, Esc exits it.
+        // Esc is the ONE full exit: it tears down BOTH layers at once (grid +
+        // red mode) regardless of how many are on. toggleActivation() hides the
+        // grid layer as part of deactivating. To drop just the grid and stay in
+        // red mode, use Enter (peels the grid only — see the Enter handler).
         if keyCode == escapeKeyCode {
             if type == .keyDown && !isRepeat {
-                if gridShown {
-                    print("[mMouse] Esc — closing grid layer")
-                    hideGrid()
-                } else {
-                    print("[mMouse] Esc — deactivating")
-                    toggleActivation()
-                }
+                print("[mMouse] Esc — deactivating (exit all layers)")
+                toggleActivation()
             }
             return nil
         }
