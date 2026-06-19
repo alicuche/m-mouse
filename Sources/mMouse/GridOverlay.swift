@@ -158,17 +158,20 @@ private final class GridView: NSView {
         NSColor.black.withAlphaComponent(0.18).setFill()
         bounds.fill()
 
-        // Hover cell: fill the WHOLE cell the cursor sits in with a pale neon
-        // yellow so it reads as "you are here", drawn under the grid lines.
-        if currentRow >= 0, currentCol >= 0, currentRow < rows, currentCol < cols {
-            let hoverRect = NSRect(
+        // The whole cell the cursor sits in: pale neon yellow flood (drawn under
+        // the grid lines) so it reads as "you are here".
+        let currentCellRect: NSRect? = (currentRow >= 0 && currentCol >= 0
+            && currentRow < rows && currentCol < cols)
+            ? NSRect(
                 x: CGFloat(currentCol) * cellW,
                 y: h - CGFloat(currentRow + 1) * cellH,
                 width: cellW,
                 height: cellH
             )
+            : nil
+        if let rect = currentCellRect {
             Self.hoverFill.setFill()
-            NSBezierPath(rect: hoverRect).fill()
+            NSBezierPath(rect: rect).fill()
         }
 
         // Grid lines (subtle).
@@ -187,6 +190,16 @@ private final class GridView: NSView {
         }
         linePath.stroke()
 
+        // Pink 3px outline around the current cell, on TOP of the grid lines so
+        // it clearly frames where the cursor is. Inset by half the line width so
+        // the stroke stays inside the cell and doesn't bleed into neighbours.
+        if let rect = currentCellRect {
+            Self.currentPillFill.setStroke()
+            let outline = NSBezierPath(rect: rect.insetBy(dx: 1.5, dy: 1.5))
+            outline.lineWidth = 3
+            outline.stroke()
+        }
+
         let alphabet = GridOverlay.alphabet
         let font = NSFont.monospacedSystemFont(ofSize: min(16, cellH * 0.32), weight: .bold)
 
@@ -203,8 +216,12 @@ private final class GridView: NSView {
                 let cx = (CGFloat(c) + 0.5) * cellW
                 let cy = h - (CGFloat(r) + 0.5) * cellH
 
+                // The cell the cursor currently sits in gets a PINK label pill so
+                // it stands out as the cursor moves through the grid in layer mode.
+                let isCurrent = (r == currentRow && c == currentCol)
+
                 drawLabel(label, centre: NSPoint(x: cx, y: cy), font: font,
-                          dimmed: dimmed, custom: custom != nil)
+                          dimmed: dimmed, custom: custom != nil, isCurrent: isCurrent)
             }
         }
     }
@@ -215,8 +232,11 @@ private final class GridView: NSView {
     private static let pillFill = NSColor(srgbRed: 1.0, green: 0.55, blue: 0.0, alpha: 1.0)
     /// Fluorescent green pill for pinned custom labels, so they pop against the orange grid.
     private static let customPillFill = NSColor(srgbRed: 0.22, green: 1.0, blue: 0.08, alpha: 1.0)
+    /// Hot-pink pill marking the cell the cursor is currently in (layer mode),
+    /// so the "you are here" label tracks the cursor as it moves.
+    private static let currentPillFill = NSColor(srgbRed: 1.0, green: 0.18, blue: 0.55, alpha: 1.0)
 
-    private func drawLabel(_ text: String, centre: NSPoint, font: NSFont, dimmed: Bool, custom: Bool) {
+    private func drawLabel(_ text: String, centre: NSPoint, font: NSFont, dimmed: Bool, custom: Bool, isCurrent: Bool) {
         // Black text on an orange (or green, for custom) pill.
         let textColor = NSColor.black.withAlphaComponent(dimmed ? 0.30 : 1.0)
         let attrs: [NSAttributedString.Key: Any] = [
@@ -235,13 +255,19 @@ private final class GridView: NSView {
             height: textSize.height + padY * 2
         )
         let pillPath = NSBezierPath(roundedRect: pill, xRadius: 4, yRadius: 4)
-        let fill = custom ? Self.customPillFill : Self.pillFill
+        // Current cell wins (pink), then custom (green), then the default orange.
+        let fill = isCurrent ? Self.currentPillFill : (custom ? Self.customPillFill : Self.pillFill)
         fill.withAlphaComponent(dimmed ? 0.22 : 0.92).setFill()
         pillPath.fill()
         // Darker border to define the pill on bright backgrounds.
-        let border = custom
-            ? NSColor(srgbRed: 0.0, green: 0.38, blue: 0.0, alpha: dimmed ? 0.25 : 0.85)
-            : NSColor(srgbRed: 0.45, green: 0.20, blue: 0.0, alpha: dimmed ? 0.25 : 0.85)
+        let border: NSColor
+        if isCurrent {
+            border = NSColor(srgbRed: 0.50, green: 0.0, blue: 0.25, alpha: dimmed ? 0.25 : 0.85)
+        } else if custom {
+            border = NSColor(srgbRed: 0.0, green: 0.38, blue: 0.0, alpha: dimmed ? 0.25 : 0.85)
+        } else {
+            border = NSColor(srgbRed: 0.45, green: 0.20, blue: 0.0, alpha: dimmed ? 0.25 : 0.85)
+        }
         border.setStroke()
         pillPath.lineWidth = 1
         pillPath.stroke()
