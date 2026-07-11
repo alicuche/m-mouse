@@ -1,0 +1,11 @@
+.build/
+.swiftpm/
+Package.resolved
+*.xcodeproj
+build.log
+
+# Local tooling / agent scratch — not part of the app
+.claude/
+.eh-claude-code/
+.serena/
+.security-review/
