@@ -630,7 +630,7 @@ final class EventTapManager: @unchecked Sendable {
         // double-click via NSEvent.clickCount; the count=1 side-effect (caret
         // placement, etc.) is intentional and matches OS behavior.
         let count = min(enterClickCount, 2)
-        mouseController.click(count: count)
+        mouseController.click(count: count, ignoringHeldModifiers: true)
         fireActionIndicators()
     }
 
@@ -1107,6 +1107,10 @@ final class EventTapManager: @unchecked Sendable {
                 // click semantics — would corrupt the drag state.
                 if mouseController.isDragging {
                     exitDragMode()
+                } else if flags.intersection(relevantModifierMask) == .maskCommand {
+                    // Cmd+Enter: left click (x2 within the window = double
+                    // click) while keeping every layer on.
+                    handleEnterClick()
                 } else if gridShown {
                     // Layer mode: Enter peels the grid layer off (stays in red
                     // mode), no click — same as the first Esc peel.

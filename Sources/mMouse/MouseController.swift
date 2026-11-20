@@ -129,11 +129,14 @@ final class MouseController: @unchecked Sendable {
 
     /// Post a left click at the current cursor position.
     /// `count=1` → single click. `count=2` after a count=1 registers as double-click.
-    func click(count: Int = 1) {
+    /// `ignoringHeldModifiers` posts a plain click even while keys like Cmd are
+    /// physically held (otherwise apps see Cmd+click, e.g. link opens a new tab).
+    func click(count: Int = 1, ignoringHeldModifiers: Bool = false) {
         let pos = realCursorPosition()
         let clamped = max(1, min(3, count))
-        postMouseEvent(.leftMouseDown, at: pos, button: .left, clickCount: Int64(clamped))
-        postMouseEvent(.leftMouseUp,   at: pos, button: .left, clickCount: Int64(clamped))
+        let flags: CGEventFlags? = ignoringHeldModifiers ? [] : nil
+        postMouseEvent(.leftMouseDown, at: pos, button: .left, clickCount: Int64(clamped), flags: flags)
+        postMouseEvent(.leftMouseUp,   at: pos, button: .left, clickCount: Int64(clamped), flags: flags)
     }
 
     func rightClick() {
@@ -377,12 +380,14 @@ final class MouseController: @unchecked Sendable {
     private func postMouseEvent(_ type: CGEventType,
                                 at point: CGPoint,
                                 button: CGMouseButton,
-                                clickCount: Int64) {
+                                clickCount: Int64,
+                                flags: CGEventFlags? = nil) {
         guard let event = CGEvent(mouseEventSource: nil,
                                   mouseType: type,
                                   mouseCursorPosition: point,
                                   mouseButton: button) else { return }
         event.setIntegerValueField(.mouseEventClickState, value: clickCount)
+        if let flags = flags { event.flags = flags }
         event.post(tap: .cghidEventTap)
     }
 }

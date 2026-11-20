@@ -32,6 +32,7 @@ Grant Accessibility when prompted (see [Install](#install-end-users)), then:
   - `Enter` → left click
   - `Enter × 2` (twice within 400ms) → double click
   - `Shift + Enter` → right click
+  - `Cmd + Enter` → left click, stays in the current mode (red or grid); `× 2` within 400ms → double click
 - **Scroll** *(hardcoded)*: `Cmd + movement_key` → scroll wheel events at the cursor
 - **Drag / block selection** *(hardcoded)*: hold `Shift + arrow` → mouseDown, drag while held, release Shift → mouseUp
 - **mMouse-priority routing**: the keys mMouse uses are tapped at the **HID level** ahead of the OS, so they win even over system hotkeys (Spotlight, Cmd+Space, Cmd+Tab). Every *other* shortcut — typing, Cmd+C/V/Q/Tab, Cmd+Shift+4, anything — passes straight through to the foreground app as if mMouse weren't running.
@@ -71,6 +72,7 @@ First launch:
 | Grid: re-pick row | `Backspace` (clears the buffered first letter) |
 | Peel grid layer off (stay in red) | `Enter` (no click) |
 | **Red mode `Enter`** (no layer) | left-click **and** exit red mode immediately |
+| **Click and stay** (red or grid) | `Cmd + Enter` (`× 2` within 400ms = double click) |
 | Exit everything (both layers) | `Esc` |
 | Up | `↑` |
 | Down | `↓` |
@@ -243,7 +245,7 @@ Every field is optional on load — **tolerant decode** means a config written b
 | `savedSpots.armWindowMs` | How long recording stays armed waiting for the slot key | int ≥ 1000 (default `8000`) |
 | `savedSpots.spots` | Recorded targets — each `{ key, x, y }` (CG coords). Written by the in-app recorder; edit or clear by hand | array (default `[]`) |
 
-> **Hardcoded** (not configurable): `Enter` / `Shift+Enter` (click), `Esc` (panic exit), `Shift + movement` (hold-to-drag), `Cmd + movement` (scroll). The movement keys must NOT collide with `Enter` — mMouse warns and disarms the colliding direction if you try. `speedBoost.modifier` should not include Cmd or be Shift exactly — those would silently lose to scroll / drag and never fire.
+> **Hardcoded** (not configurable): `Enter` / `Shift+Enter` / `Cmd+Enter` (click), `Esc` (panic exit), `Shift + movement` (hold-to-drag), `Cmd + movement` (scroll). The movement keys must NOT collide with `Enter` — mMouse warns and disarms the colliding direction if you try. `speedBoost.modifier` should not include Cmd or be Shift exactly — those would silently lose to scroll / drag and never fire.
 
 ### Speed cheat sheet
 
