@@ -533,6 +533,7 @@ final class EventTapManager: @unchecked Sendable {
             MainActor.assumeIsolated { badge.hide() }
         }
         escFirstTapAt = nil
+        resetEdgeTap()
         enterClickCount = 0
         enterClickResetWork?.cancel()
         enterClickResetWork = nil
@@ -1107,6 +1108,11 @@ final class EventTapManager: @unchecked Sendable {
         }
 
         if movementKeyCodes.contains(keyCode) {
+            // EDGE JUMP: double-tap a bare arrow (or a chord like ←+↑) → warp to
+            // that screen edge / corner (15px inset). Works in red + grid mode.
+            if handleEdgeTap(keyCode: keyCode, type: type, isRepeat: isRepeat, flags: flags) {
+                return nil
+            }
             // LAYER MODE: a bare arrow steps the hover cell one cell over and
             // warps the cursor to its centre (discrete cell jumps). Cmd+arrow
             // (scroll) and Shift+arrow (drag) keep their normal meaning.
@@ -1207,6 +1213,102 @@ final class EventTapManager: @unchecked Sendable {
         // claimed above. Everything else (typing in red mode, digits,
         // punctuation, system shortcuts) passes through to the foreground app.
         return Unmanaged.passUnretained(event)
+    }
+
+    // MARK: - Edge jump (double-tap arrows)
+    //
+    // A "tap" = a chord of bare arrows pressed then fully released within
+    // `edgeTapMaxHold`. Two identical taps (same direction set) whose gap is
+    // ≤ `edgeTapWindow` warp the cursor to that edge / corner of the current
+    // display, `edgeInset` px from the border. Single direction → edge
+    // midpoint (e.g. ← = left edge, vertically centred); two directions →
+    // corner (←+↑ = top-left). The jump fires on the second tap's keyDown
+    // (as soon as its chord matches), and the keys are then swallowed until
+    // released so no continuous move / cell step follows.
+
+    private let edgeTapMaxHold: TimeInterval = 0.25
+    private let edgeTapWindow: TimeInterval = 0.3
+    private let edgeInset: CGFloat = 15
+    private var tapHeld: Set<CGKeyCode> = []                 // bare arrows down now
+    private var tapChord: Set<MouseController.Direction> = [] // dirs of current chord
+    private var tapChordStart: TimeInterval = 0
+    private var tapChordConsumed = false
+    private var lastTap: (dirs: Set<MouseController.Direction>, end: TimeInterval)?
+    private var edgeSuppressed: Set<CGKeyCode> = []           // swallowed until keyUp
+
+    private func resetEdgeTap() {
+        tapHeld.removeAll(); tapChord.removeAll()
+        tapChordConsumed = false; lastTap = nil
+        edgeSuppressed.removeAll()
+    }
+
+    /// Returns true when the event was fully handled (swallowed).
+    private func handleEdgeTap(keyCode: CGKeyCode, type: CGEventType,
+                               isRepeat: Bool, flags: CGEventFlags) -> Bool {
+        guard let dir = directionForMovementKey(keyCode) else { return false }
+        let now = CACurrentMediaTime()
+
+        if type == .keyUp {
+            let wasSuppressed = edgeSuppressed.remove(keyCode) != nil
+            if tapHeld.remove(keyCode) != nil && tapHeld.isEmpty {
+                if !tapChordConsumed && !tapChord.isEmpty && now - tapChordStart <= edgeTapMaxHold {
+                    lastTap = (tapChord, now)
+                } else {
+                    lastTap = nil
+                }
+                tapChord.removeAll()
+                tapChordConsumed = false
+            }
+            return wasSuppressed
+        }
+
+        guard type == .keyDown else { return false }
+        if isRepeat { return edgeSuppressed.contains(keyCode) }
+
+        // Only BARE arrows take part; any modifier breaks the sequence.
+        guard flags.intersection(relevantModifierMask).isEmpty else {
+            lastTap = nil
+            return false
+        }
+        if tapHeld.isEmpty {
+            tapChord.removeAll()
+            tapChordStart = now
+            tapChordConsumed = false
+        }
+        tapHeld.insert(keyCode)
+        tapChord.insert(dir)
+
+        guard !tapChordConsumed, let last = lastTap,
+              tapChord == last.dirs, now - last.end <= edgeTapWindow else {
+            return false
+        }
+        lastTap = nil
+        tapChordConsumed = true
+        // Stop any movement the second tap's earlier keys already started and
+        // swallow every held arrow until it is released.
+        for kc in tapHeld {
+            edgeSuppressed.insert(kc)
+            if heldMovement.remove(kc) != nil, let d = directionForMovementKey(kc) {
+                mouseController.release(d)
+            }
+        }
+        warpToEdge(tapChord)
+        return true
+    }
+
+    private func warpToEdge(_ dirs: Set<MouseController.Direction>) {
+        let b = mouseController.displayBounds(containing: currentCursorPosition())
+        let h = (dirs.contains(.right) ? 1 : 0) - (dirs.contains(.left) ? 1 : 0)
+        let v = (dirs.contains(.down) ? 1 : 0) - (dirs.contains(.up) ? 1 : 0)
+        guard h != 0 || v != 0 else { return }   // e.g. ←+→ cancels out
+        let x = h < 0 ? b.minX + edgeInset : h > 0 ? b.maxX - edgeInset : b.midX
+        let y = v < 0 ? b.minY + edgeInset : v > 0 ? b.maxY - edgeInset : b.midY
+        print("[mMouse] edge jump \(dirs) → (\(Int(x)), \(Int(y)))")
+        mouseController.warp(to: CGPoint(x: x, y: y))
+        if gridShown {
+            gridCurrentCell = (-1, -1)
+            refreshCurrentCell()
+        }
     }
 
     /// Time of the first Esc of a pending double-tap exit (red mode only).

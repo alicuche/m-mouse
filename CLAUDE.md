@@ -44,6 +44,8 @@ production checkout. Build/test here, then merge to `main`.
   exit. Esc is claimed with any modifier while active. In red mode bare Enter PASSES
   THROUGH (submits forms); Cmd+Enter = left click, Shift+Enter = right click — never exit
   (`gridShown` vs `isActive`, `escFirstTapAt`).
+- Edge jump: double-tap a bare arrow (or chord ←+↑ …) warps to that display edge/corner,
+  15px inset (`handleEdgeTap` / `warpToEdge` in EventTapManager).
 - `Config.swift` — `~/.mMouse.json`, tolerant decode (`decodeIfPresent`), hot-reload.
 - `KeyMapping.swift` — key-name / modifier-name → keycode.
 - `AppDelegate.swift` — wiring, Accessibility permission flow, self-relaunch.

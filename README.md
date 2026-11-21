@@ -75,6 +75,7 @@ First launch:
 | `Enter` (red mode) | **passes through** to the app (submit / newline) |
 | **Click and stay** (red mode) | `Cmd + Enter` (`× 2` within 400ms = double click) |
 | Drop the grid layer | `Esc` |
+| **Edge jump** | double-tap an arrow → that screen edge (centred); double-tap a chord (e.g. `←`+`↑`) → that corner. 15px from the border, red + grid mode |
 | Exit everything | `Esc` `Esc` (double-tap within 0.5s, from red mode) |
 | Up | `↑` |
 | Down | `↓` |
