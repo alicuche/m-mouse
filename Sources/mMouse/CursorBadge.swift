@@ -91,6 +91,7 @@ final class CursorBadge {
     /// Update badge position to follow the cursor. `cursor` is in CG coords
     /// (top-left origin, Y down) — same coord space MouseController uses.
     func move(to cursor: CGPoint) {
+        SystemCursor.reassert()
         // Tip of the arrow (at pad,pad inside the panel) lands on the hotspot.
         let nsOrigin = Self.panelOriginForCursor(
             cursor,
@@ -197,6 +198,11 @@ final class CursorBadge {
 enum SystemCursor {
     private static var hidden = false
     private static var backgroundEnabled = false
+    /// How many hide calls we've issued since the last show. Normally 1, but
+    /// other apps (cursor-rect updates, app switches, Mission Control, Dock)
+    /// can make the cursor visible again behind our back; `reassert()` then
+    /// hides again and bumps this so `show()` can balance every call.
+    private static var hideCount = 0
 
     static func hide() {
         guard !hidden else { return }
@@ -206,12 +212,28 @@ enum SystemCursor {
             backgroundEnabled = true
         }
         CGDisplayHideCursor(CGMainDisplayID())
+        hideCount = 1
         hidden = true
+    }
+
+    /// Called from the 60Hz badge-follow tick: if something re-showed the
+    /// real cursor while we're active, hide it again.
+    static func reassert() {
+        guard hidden, _cursorIsVisible() != 0 else { return }
+        CGDisplayHideCursor(CGMainDisplayID())
+        hideCount += 1
     }
 
     static func show() {
         guard hidden else { return }
-        CGDisplayShowCursor(CGMainDisplayID())
+        // Balance every hide we issued (extra shows at count 0 are no-ops),
+        // then make sure it's really back.
+        for _ in 0..<max(hideCount, 1) { CGDisplayShowCursor(CGMainDisplayID()) }
+        var guardN = 0
+        while _cursorIsVisible() == 0 && guardN < 16 {
+            CGDisplayShowCursor(CGMainDisplayID()); guardN += 1
+        }
+        hideCount = 0
         hidden = false
     }
 }
@@ -221,3 +243,8 @@ private func _CGSDefaultConnection() -> Int32
 
 @_silgen_name("CGSSetConnectionProperty")
 private func CGSSetConnectionProperty(_ cid: Int32, _ targetCID: Int32, _ key: CFString, _ value: CFTypeRef) -> Int32
+
+/// `CGCursorIsVisible` is marked unavailable in Swift but still exported by
+/// CoreGraphics; bind it directly.
+@_silgen_name("CGCursorIsVisible")
+private func _cursorIsVisible() -> Int32
