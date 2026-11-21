@@ -49,17 +49,17 @@ final class MouseController: @unchecked Sendable {
 
     /// Acceleration curve: short tap stays slow (precision), held key ramps up.
     /// - 0–100ms: 0.3× (precise tap)
-    /// - 100–400ms: linear ramp 0.3× → 2.5×
-    /// - 400ms+: 2.5× (fast crossing)
+    /// - 100–300ms: linear ramp 0.3× → 4×
+    /// - 300ms+: 4× (fast crossing)
     private func accelMultiplier() -> Double {
         guard let start = movementStartedAt else { return 1.0 }
         let elapsed = CACurrentMediaTime() - start
         if elapsed < 0.1 { return 0.3 }
-        if elapsed < 0.4 {
-            let t = (elapsed - 0.1) / 0.3
-            return 0.3 + (2.5 - 0.3) * t
+        if elapsed < 0.3 {
+            let t = (elapsed - 0.1) / 0.2
+            return 0.3 + (4.0 - 0.3) * t
         }
-        return 2.5
+        return 4.0
     }
 
     init() {
