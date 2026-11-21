@@ -185,7 +185,14 @@ final class MouseController: @unchecked Sendable {
     private let scrollTickRate: Double = 60 // 60 ticks/sec, matches movement
     private let scrollPixelsPerTick: Int32 = 8
 
-    func pressScroll(_ direction: Direction) {
+    /// When true, scroll ticks are posted with the Command flag so canvas apps
+    /// (n8n / Figma / Miro / maps…) treat them as ZOOM at the cursor. When
+    /// false, the event carries NO modifiers — otherwise the physically-held
+    /// Cmd (our scroll trigger) leaks into the event and Cmd+wheel zooms.
+    private var scrollAsZoom = false
+
+    func pressScroll(_ direction: Direction, zoom: Bool = false) {
+        scrollAsZoom = zoom
         if activeScrollDirections.isEmpty {
             scrollStartedAt = CACurrentMediaTime()
             print("[mMouse] scroll start dir=\(direction)")
@@ -206,6 +213,7 @@ final class MouseController: @unchecked Sendable {
         scrollTimer = nil
         activeScrollDirections.removeAll()
         scrollStartedAt = nil
+        scrollAsZoom = false
     }
 
     private func startScrollTimerIfNeeded() {
@@ -238,10 +246,15 @@ final class MouseController: @unchecked Sendable {
         if activeScrollDirections.contains(.left)  { dx += scrollPixelsPerTick * mult }
         if activeScrollDirections.contains(.right) { dx -= scrollPixelsPerTick * mult }
 
-        postScrollEvent(deltaY: dy, deltaX: dx)
+        if scrollAsZoom {
+            // Zoom: vertical only, gentler step so it's controllable.
+            postScrollEvent(deltaY: dy / 2, deltaX: 0, flags: .maskCommand)
+        } else {
+            postScrollEvent(deltaY: dy, deltaX: dx, flags: [])
+        }
     }
 
-    private func postScrollEvent(deltaY: Int32, deltaX: Int32) {
+    private func postScrollEvent(deltaY: Int32, deltaX: Int32, flags: CGEventFlags) {
         // .pixel units are the most widely-supported scroll format across
         // native AppKit, Electron, web browsers, and Terminal. .line units
         // work in many native apps but silently no-op in some Electron apps.
@@ -264,6 +277,9 @@ final class MouseController: @unchecked Sendable {
         if needsHorizontal {
             event.setIntegerValueField(.scrollWheelEventPointDeltaAxis2, value: Int64(deltaX))
         }
+        // Explicit flags: a nil source would inherit the live keyboard
+        // modifiers (Cmd held for scroll) → apps see Cmd+wheel = zoom.
+        event.flags = flags
         event.post(tap: .cghidEventTap)
     }
 

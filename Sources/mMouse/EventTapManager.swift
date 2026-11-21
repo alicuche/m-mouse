@@ -1020,6 +1020,37 @@ final class EventTapManager: @unchecked Sendable {
 
         // --- ACTIVE MODE ---
 
+        // STRICT PASSTHROUGH: mMouse only claims its own exact combos on
+        // arrows / Enter / Esc (see `claimsKey`). Any other modifier combo on
+        // those keys (Ctrl+←/→ switch Space/display, Cmd+Opt+Esc force quit,
+        // Opt+Enter, …) goes to the OS / foreground app untouched. The keyUp
+        // of a passed-through keyDown is passed through too, so apps never
+        // see a dangling keyDown.
+        let mods = flags.intersection(relevantModifierMask)
+        let isOwnKey = movementKeyCodes.contains(keyCode) || keyCode == escapeKeyCode
+            || keyCode == enterKeyCode || keyCode == keypadEnterKeyCode
+        if isOwnKey {
+            if type == .keyUp, passedThroughKeys.remove(keyCode) != nil {
+                // Defensive: never leave a movement/scroll timer running.
+                releaseMovementOrScroll(keyCode: keyCode)
+                return Unmanaged.passUnretained(event)
+            }
+            if type == .keyDown {
+                // Ownership is decided on the INITIAL press only. Autorepeats
+                // keep the owner even if a modifier changed mid-hold —
+                // otherwise holding ← then adding Ctrl would hand the keyUp
+                // to the OS and leave the move timer running (stuck cursor).
+                let pass = isRepeat
+                    ? passedThroughKeys.contains(keyCode)
+                    : !claimsKey(keyCode, mods: mods)
+                if pass {
+                    passedThroughKeys.insert(keyCode)
+                    return Unmanaged.passUnretained(event)
+                }
+                passedThroughKeys.remove(keyCode)
+            }
+        }
+
         // Esc is the ONE full exit: it tears down BOTH layers at once (grid +
         // red mode) regardless of how many are on. toggleActivation() hides the
         // grid layer as part of deactivating. To drop just the grid and stay in
@@ -1090,7 +1121,7 @@ final class EventTapManager: @unchecked Sendable {
             // so a Shift+Cmd+arrow combo doesn't try to scroll on top of
             // the in-progress drag.
             if flags.contains(.maskCommand) && !mouseController.isDragging {
-                handleScrollKey(keyCode: keyCode, type: type, isRepeat: isRepeat)
+                handleScrollKey(keyCode: keyCode, type: type, isRepeat: isRepeat, flags: flags)
                 return nil
             }
             // Re-evaluate boost from current flags — covers the case where
@@ -1170,6 +1201,32 @@ final class EventTapManager: @unchecked Sendable {
         return Unmanaged.passUnretained(event)
     }
 
+    /// Keys whose keyDown we passed through — their keyUp passes through too.
+    private var passedThroughKeys: Set<CGKeyCode> = []
+
+    /// Exact modifier sets mMouse owns on its own keys. Everything else is
+    /// left to the OS / foreground app.
+    private func claimsKey(_ keyCode: CGKeyCode, mods: CGEventFlags) -> Bool {
+        if keyCode == escapeKeyCode {
+            // Bare Esc = exit. While dragging Shift is held, so Shift+Esc must
+            // still exit (toggleActivation cleans up the drag).
+            return mods.isEmpty || mouseController.isDragging
+        }
+        if keyCode == enterKeyCode || keyCode == keypadEnterKeyCode {
+            if mouseController.isDragging { return true }   // Enter commits drag
+            return mods.isEmpty || mods == .maskShift || mods == .maskCommand
+        }
+        // Arrows: move / drag (Shift) / scroll (Cmd) / zoom (Cmd+Opt) / boost.
+        var allowed: [CGEventFlags] = [[], .maskShift, .maskCommand,
+                                       [.maskCommand, .maskAlternate],
+                                       [.maskCommand, .maskShift]]
+        if !keys.boostModifier.isEmpty {
+            allowed.append(keys.boostModifier)
+            allowed.append(keys.boostModifier.union(.maskShift))
+        }
+        return allowed.contains(mods)
+    }
+
     private func handleMovementKey(keyCode: CGKeyCode, type: CGEventType, isRepeat: Bool) {
         let direction: MouseController.Direction
         switch keyCode {
@@ -1228,7 +1285,7 @@ final class EventTapManager: @unchecked Sendable {
 
     /// Invoked ONLY for keyDown — keyUp of movement keys is intercepted by
     /// `releaseMovementOrScroll` in the main callback regardless of Shift state.
-    private func handleScrollKey(keyCode: CGKeyCode, type: CGEventType, isRepeat: Bool) {
+    private func handleScrollKey(keyCode: CGKeyCode, type: CGEventType, isRepeat: Bool, flags: CGEventFlags) {
         assert(type == .keyDown, "handleScrollKey called with non-keyDown type; release path is in main callback")
         guard let direction = directionForMovementKey(keyCode) else { return }
         if isRepeat { return }
@@ -1237,8 +1294,12 @@ final class EventTapManager: @unchecked Sendable {
         if heldMovement.remove(keyCode) != nil {
             mouseController.release(direction)
         }
+        // Cmd+Option+Up/Down = ZOOM at cursor (Cmd+wheel semantics); plain
+        // Cmd+arrow = pure scroll/pan with no modifiers leaking into the event.
+        let zoom = (direction == .up || direction == .down)
+            && flags.contains(.maskAlternate)
         if heldScroll.insert(keyCode).inserted {
-            mouseController.pressScroll(direction)
+            mouseController.pressScroll(direction, zoom: zoom)
         }
     }
 
