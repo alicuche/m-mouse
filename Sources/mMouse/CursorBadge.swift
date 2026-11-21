@@ -27,6 +27,8 @@ final class CursorBadge {
     private static let panelH: CGFloat = 20 * arrowScale + pad * 2
 
     private let idleTint:   NSColor = .systemRed
+    /// Idle tint while cmd+mouse mode is on (arrows = Cmd+arrow).
+    private let cmdTint:    NSColor = .systemBlue
     private let actionTint: NSColor = .systemGreen
     /// Shown while saved-spot recording is armed — a distinct amber so the user
     /// can SEE the recorder is waiting for a slot key.
@@ -35,6 +37,8 @@ final class CursorBadge {
     /// True while saved-spot recording is armed. Makes the idle tint amber so a
     /// restored colour (after a flash) keeps showing the armed state.
     private var isRecording: Bool = false
+    /// True while cmd+mouse mode is on → blue idle tint.
+    private var isCmdMode: Bool = false
 
     /// Bumps on every show/hide/flash so a stale restore from an OLD flash
     /// can't clobber a NEW state (rapid-fire clicks, deactivate mid-flash).
@@ -121,12 +125,19 @@ final class CursorBadge {
         setIdleColor()
     }
 
+    /// Toggle the cmd+mouse visual (blue arrow). Persists across flashes.
+    func setCmdMode(_ on: Bool) {
+        isCmdMode = on
+        flashGen &+= 1
+        setIdleColor()
+    }
+
     private func setIdleColor() {
-        let tint = isRecording ? recordTint : idleTint
+        let tint = isRecording ? recordTint : (isCmdMode ? cmdTint : idleTint)
         imageView.image = CursorBadge.arrowImage(fill: tint)
     }
 
-    /// Arrow images are cached per tint (only 3 colours) — flashes swap them.
+    /// Arrow images are cached per tint (only 4 colours) — flashes swap them.
     private static var arrowCache: [NSColor: NSImage] = [:]
 
     /// Classic pointer: coloured fill, thick white outline, soft shadow so it

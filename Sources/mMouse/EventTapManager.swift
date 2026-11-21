@@ -273,6 +273,8 @@ final class EventTapManager: @unchecked Sendable {
     private let enterKeyCode: CGKeyCode = CGKeyCode(kVK_Return)
     private let keypadEnterKeyCode: CGKeyCode = CGKeyCode(kVK_ANSI_KeypadEnter)
     private let escapeKeyCode: CGKeyCode = CGKeyCode(kVK_Escape)
+    /// Cmd+M (while active) toggles "cmd+mouse" mode.
+    private let cmdModeKeyCode: CGKeyCode = CGKeyCode(kVK_ANSI_M)
     private let doubleClickWindowMs: Double = 400
 
     // MARK: - Cached key tables (rebuilt on config change)
@@ -506,6 +508,29 @@ final class EventTapManager: @unchecked Sendable {
         if !gridShown { showGrid() }          // + grid layer on top
     }
 
+    // MARK: - Cmd+mouse mode (Cmd+M while active)
+    //
+    // While on, Cmd is treated as virtually HELD for the arrows only: bare
+    // arrow = Cmd+arrow (scroll), Opt+arrow = Cmd+Opt+arrow (zoom), etc.
+    // Enter is NOT affected (Cmd+Enter still needs a real Cmd). The arrow
+    // badge turns blue. Cmd+M again toggles back; exiting active mode resets.
+
+    private var cmdMode: Bool = false
+
+    private func setCmdMode(_ on: Bool) {
+        guard cmdMode != on else { return }
+        cmdMode = on
+        // Held arrows switch meaning — stop whatever they were doing so no
+        // move/scroll timer leaks across the switch.
+        heldMovement.removeAll()
+        heldScroll.removeAll()
+        mouseController.releaseAll()
+        mouseController.stopScroll()
+        resetEdgeTap()
+        MainActor.assumeIsolated { badge.setCmdMode(on) }
+        print("[mMouse] cmd+mouse mode: \(on ? "ON" : "off")")
+    }
+
     private func toggleActivation() {
         isActive.toggle()
         if isActive {
@@ -530,6 +555,7 @@ final class EventTapManager: @unchecked Sendable {
             heldMovement.removeAll()
             mouseController.setBoost(1.0)
             stopBadgeFollowTimer()
+            setCmdMode(false)
             MainActor.assumeIsolated { badge.hide() }
         }
         escFirstTapAt = nil
@@ -1032,8 +1058,11 @@ final class EventTapManager: @unchecked Sendable {
         // ones passed through below — breaks the pending first tap.
         if type == .keyDown && keyCode != escapeKeyCode { escFirstTapAt = nil }
 
-        let mods = flags.intersection(relevantModifierMask)
-        let isOwnKey = movementKeyCodes.contains(keyCode) || keyCode == escapeKeyCode
+        // Cmd+mouse mode: arrows behave as if Cmd were held (Enter excluded).
+        let isArrowKey = movementKeyCodes.contains(keyCode)
+        let effFlags: CGEventFlags = (cmdMode && isArrowKey) ? flags.union(.maskCommand) : flags
+        let mods = effFlags.intersection(relevantModifierMask)
+        let isOwnKey = isArrowKey || keyCode == escapeKeyCode
             || keyCode == enterKeyCode || keyCode == keypadEnterKeyCode
         if isOwnKey {
             if type == .keyUp, passedThroughKeys.remove(keyCode) != nil {
@@ -1075,6 +1104,12 @@ final class EventTapManager: @unchecked Sendable {
                     print("[mMouse] Esc — closing grid layer (Esc×2 to exit)")
                     hideGrid()
                     escFirstTapAt = nil
+                } else if cmdMode {
+                    // Cmd+mouse mode: one Esc drops back to plain red mode.
+                    // Doesn't count toward the double-tap exit.
+                    print("[mMouse] Esc — leaving cmd+mouse mode")
+                    setCmdMode(false)
+                    escFirstTapAt = nil
                 } else if let first = escFirstTapAt, now - first <= escDoubleTapWindow {
                     print("[mMouse] Esc×2 — deactivating")
                     escFirstTapAt = nil
@@ -1086,6 +1121,13 @@ final class EventTapManager: @unchecked Sendable {
             }
             return nil
         }
+        // --- Cmd+M toggles cmd+mouse mode (claimed only while active, so
+        // Cmd+M minimise still works when mMouse is off). ---
+        if keyCode == cmdModeKeyCode && flags.intersection(relevantModifierMask) == .maskCommand {
+            if type == .keyDown && !isRepeat { setCmdMode(!cmdMode) }
+            return nil
+        }
+
         // --- Saved spots: warpModifier+key (default Cmd+<key>) either records
         // the live position (when armed) or warps to a recorded position. Works
         // in both red and grid mode. Movement keys are excluded so Cmd+arrow
@@ -1110,6 +1152,7 @@ final class EventTapManager: @unchecked Sendable {
         if movementKeyCodes.contains(keyCode) {
             // EDGE JUMP: double-tap a bare arrow (or a chord like ←+↑) → warp to
             // that screen edge / corner (15px inset). Works in red + grid mode.
+            let flags = effFlags   // cmd+mouse mode: virtual Cmd on arrows
             if handleEdgeTap(keyCode: keyCode, type: type, isRepeat: isRepeat, flags: flags) {
                 return nil
             }

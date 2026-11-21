@@ -46,6 +46,10 @@ production checkout. Build/test here, then merge to `main`.
   (`gridShown` vs `isActive`, `escFirstTapAt`).
 - Edge jump: double-tap a bare arrow (or chord ←+↑ …) warps to that display edge/corner,
   15px inset; ←+→+↓ chord (single press) → display centre (`handleEdgeTap` / `warpToEdge`).
+- Cmd+mouse mode: Cmd+M while active toggles a virtual-held Cmd for ARROWS only (bare arrow =
+  Cmd+arrow scroll, Opt+arrow = zoom); Enter unaffected; arrow badge turns blue; a single Esc
+  leaves it (back to red mode, after the grid layer if shown); reset on exit
+  (`cmdMode` / `setCmdMode`, `CursorBadge.setCmdMode`).
 - `Config.swift` — `~/.mMouse.json`, tolerant decode (`decodeIfPresent`), hot-reload.
 - `KeyMapping.swift` — key-name / modifier-name → keycode.
 - `AppDelegate.swift` — wiring, Accessibility permission flow, self-relaunch.
