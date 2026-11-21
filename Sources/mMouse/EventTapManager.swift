@@ -1226,8 +1226,13 @@ final class EventTapManager: @unchecked Sendable {
     // (as soon as its chord matches), and the keys are then swallowed until
     // released so no continuous move / cell step follows.
 
-    private let edgeTapMaxHold: TimeInterval = 0.25
-    private let edgeTapWindow: TimeInterval = 0.3
+    private let edgeTapMaxHold: TimeInterval = 0.12
+    private let edgeTapWindow: TimeInterval = 0.1
+    /// The FIRST tap only counts if no arrow was released in the preceding
+    /// `edgeTapQuiet` — so a burst of quick stepping taps never jumps.
+    private let edgeTapQuiet: TimeInterval = 0.3
+    private var lastArrowUpAt: TimeInterval = 0
+    private var tapChordQuiet = false
     private let edgeInset: CGFloat = 15
     private var tapHeld: Set<CGKeyCode> = []                 // bare arrows down now
     private var tapChord: Set<MouseController.Direction> = [] // dirs of current chord
@@ -1250,8 +1255,10 @@ final class EventTapManager: @unchecked Sendable {
 
         if type == .keyUp {
             let wasSuppressed = edgeSuppressed.remove(keyCode) != nil
+            defer { lastArrowUpAt = now }
             if tapHeld.remove(keyCode) != nil && tapHeld.isEmpty {
-                if !tapChordConsumed && !tapChord.isEmpty && now - tapChordStart <= edgeTapMaxHold {
+                if !tapChordConsumed && tapChordQuiet && !tapChord.isEmpty
+                    && now - tapChordStart <= edgeTapMaxHold {
                     lastTap = (tapChord, now)
                 } else {
                     lastTap = nil
@@ -1274,9 +1281,22 @@ final class EventTapManager: @unchecked Sendable {
             tapChord.removeAll()
             tapChordStart = now
             tapChordConsumed = false
+            tapChordQuiet = now - lastArrowUpAt >= edgeTapQuiet
         }
         tapHeld.insert(keyCode)
         tapChord.insert(dir)
+
+        // CENTRE: ←+→+↓ held together → jump to the display centre right away
+        // (single press, no double-tap — this chord never happens in normal
+        // movement, so it can't misfire).
+        let heldDirs = Set(tapHeld.compactMap { directionForMovementKey($0) })
+        if !tapChordConsumed && heldDirs == Self.centreChord {
+            lastTap = nil
+            tapChordConsumed = true
+            suppressHeldArrows()
+            warpToEdge(Self.centreChord)
+            return true
+        }
 
         guard !tapChordConsumed, let last = lastTap,
               tapChord == last.dirs, now - last.end <= edgeTapWindow else {
@@ -1284,20 +1304,33 @@ final class EventTapManager: @unchecked Sendable {
         }
         lastTap = nil
         tapChordConsumed = true
-        // Stop any movement the second tap's earlier keys already started and
-        // swallow every held arrow until it is released.
+        suppressHeldArrows()
+        warpToEdge(tapChord)
+        return true
+    }
+
+    private static let centreChord: Set<MouseController.Direction> = [.left, .right, .down]
+
+    /// Stop any movement the held arrows already started and swallow every
+    /// held arrow until it is released (no continuous move / cell step after
+    /// a jump).
+    private func suppressHeldArrows() {
         for kc in tapHeld {
             edgeSuppressed.insert(kc)
             if heldMovement.remove(kc) != nil, let d = directionForMovementKey(kc) {
                 mouseController.release(d)
             }
         }
-        warpToEdge(tapChord)
-        return true
     }
 
     private func warpToEdge(_ dirs: Set<MouseController.Direction>) {
         let b = mouseController.displayBounds(containing: currentCursorPosition())
+        if dirs == Self.centreChord {
+            print("[mMouse] centre jump")
+            mouseController.warp(to: CGPoint(x: b.midX, y: b.midY))
+            if gridShown { gridCurrentCell = (-1, -1); refreshCurrentCell() }
+            return
+        }
         let h = (dirs.contains(.right) ? 1 : 0) - (dirs.contains(.left) ? 1 : 0)
         let v = (dirs.contains(.down) ? 1 : 0) - (dirs.contains(.up) ? 1 : 0)
         guard h != 0 || v != 0 else { return }   // e.g. ←+→ cancels out

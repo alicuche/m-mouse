@@ -12,7 +12,7 @@ struct ActivationComboConfig: Codable, Equatable {
 
     static let `default` = ActivationComboConfig(
         modifier: "command",
-        key: ";",
+        key: "e",
         repeatCount: 1,
         windowMs: 500
     )
@@ -53,7 +53,7 @@ struct GridComboConfig: Codable, Equatable {
     /// mode if it wasn't already).
     var key: String
 
-    // Default Cmd+' — sibling of the Cmd+; activation combo (adjacent key).
+    // Default Cmd+' (activation default is Cmd+E).
     static let `default` = GridComboConfig(modifier: "command", key: "'")
 }
 
@@ -93,7 +93,7 @@ struct GridConfig: Codable, Equatable {
         GridCustomLabel(cell: "WI", label: "33"),
     ]
 
-    static let `default` = GridConfig(combo: .default, targetCellPx: 150)
+    static let `default` = GridConfig(combo: .default, targetCellPx: 60, targetCellHeightPx: 44)
 
     enum CodingKeys: String, CodingKey {
         case combo, targetCellPx, targetCellHeightPx, customLabels

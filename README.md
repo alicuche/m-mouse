@@ -16,13 +16,13 @@ open /Applications/mMouse.app
 
 Grant Accessibility when prompted (see [Install](#install-end-users)), then:
 
-1. Press **`Cmd + ;`** → red follow-dot + a labelled grid appear.
+1. Press **`Cmd + E`** → red follow-dot + a labelled grid appear.
 2. Type a cell's two letters (e.g. `BC`) → cursor warps there. Type a **green** label (e.g. `S1`) for a pinned cell.
 3. Arrows fine-tune (step cell-by-cell), **`Enter`** or **`Esc`** drops the grid (back to red mode); **`Esc` `Esc`** (double-tap) exits everything.
 
 ## Features
 
-- **Activation**: `Cmd + ;` (single press by default; configurable) turns on **red mode + the grid layer together** — the red follow-badge AND a translucent labelled matrix appear at once. You can add more activation combos via config (e.g. both `Cmd + E` and `Cmd + Q`). Re-pressing the combo while active never exits — it just re-shows both layers (so it re-opens the grid if you'd peeled it back to red-only). A double-tap `Esc` is the only full exit.
+- **Activation**: `Cmd + E` (single press by default; configurable) turns on **red mode + the grid layer together** — the red follow-badge AND a translucent labelled matrix appear at once. You can add more activation combos via config (e.g. also `Cmd + Q`). Re-pressing the combo while active never exits — it just re-shows both layers (so it re-opens the grid if you'd peeled it back to red-only). A double-tap `Esc` is the only full exit.
 - **Grid layer**: while on, type a 2-letter cell code (row letter + column letter, e.g. `BC`) to warp the cursor straight to that cell — coarse-jump anywhere on screen, then fine-tune with arrows (which step cell-by-cell). `Shift` + the second letter also clicks. `Cmd + '` re-opens the layer if you peeled it off.
 - **Custom cell labels**: pin easy-to-remember labels (e.g. `S1`, `11`) onto specific cells. They render on a **fluorescent-green pill** so they stand out, and you type the label to warp there. Fully configurable; ships with a handful of defaults.
 - **Saved spots**: record any cursor position and warp straight back to it with `Cmd + <key>` (works in red mode *and* the grid layer). Arm recording with `Cmd + Shift + S`, then press `Cmd + <key>` to store the live position into that slot. In the grid layer each saved spot shows its warp combo (e.g. `⌘J`) on a small **blue badge** under the cell it falls in.
@@ -62,7 +62,7 @@ First launch:
 
 | Action | Keys |
 |---|---|
-| **Activate (red + grid layer)** | `Cmd + ;` (also `Cmd + E` / `Cmd + Q` if configured) |
+| **Activate (red + grid layer)** | `Cmd + E` (also `Cmd + Q` etc. if configured) |
 | Re-open grid layer (after peeling) | `Cmd + '` |
 | **Grid jump** (warp to a cell) | with layer on: type row letter + column letter (e.g. `BC`) |
 | Grid jump **+ click** | row letter → `Shift` + column letter |
@@ -75,6 +75,7 @@ First launch:
 | `Enter` (red mode) | **passes through** to the app (submit / newline) |
 | **Click and stay** (red mode) | `Cmd + Enter` (`× 2` within 400ms = double click) |
 | Drop the grid layer | `Esc` |
+| **Centre jump** | press `←`+`→`+`↓` together (single press) → centre of the current screen |
 | **Edge jump** | double-tap an arrow → that screen edge (centred); double-tap a chord (e.g. `←`+`↑`) → that corner. 15px from the border, red + grid mode |
 | Exit everything | `Esc` `Esc` (double-tap within 0.5s, from red mode) |
 | Up | `↑` |
@@ -120,7 +121,7 @@ Apps see the Shift modifier held during the drag, so Shift+drag semantics (e.g. 
 
 ### Grid layer / grid jump
 
-The grid layer is an **opt-in on top of red mode**. Press `Cmd + '` (configurable) and a translucent labelled matrix appears over the display the cursor is on — if red mode wasn't on yet, this turns it on too. The screen is split into a grid sized so cells stay roughly square (~150px target, configurable via `grid.targetCellPx`); each cell carries a two-letter code — the **first letter is its row**, the **second its column** (e.g. `BC` = row B, column C).
+The grid layer is an **opt-in on top of red mode**. Press `Cmd + '` (configurable) and a translucent labelled matrix appears over the display the cursor is on — if red mode wasn't on yet, this turns it on too. The screen is split into a grid sized so cells stay roughly square (default 60×44px cells, configurable via `grid.targetCellPx` / `grid.targetCellHeightPx`); each cell carries a two-letter code — the **first letter is its row**, the **second its column** (e.g. `BC` = row B, column C).
 
 - Press the **first letter** → every other row dims so only the candidate columns remain bright.
 - Press the **second letter** → the cursor warps to that cell's centre. The layer **stays up** so you can immediately jump again or fine-tune with arrows.
@@ -181,7 +182,7 @@ File: `~/.mMouse.json` (created on first launch). The full default config, every
 {
   "activationCombo": {
     "modifier": "command",
-    "key": ";",
+    "key": "e",
     "repeatCount": 1,
     "windowMs": 500
   },
@@ -199,7 +200,8 @@ File: `~/.mMouse.json` (created on first launch). The full default config, every
   },
   "grid": {
     "combo": { "modifier": "command", "key": "'" },
-    "targetCellPx": 150,
+    "targetCellPx": 60,
+    "targetCellHeightPx": 44,
     "customLabels": [
       { "cell": "FA", "label": "S1" },
       { "cell": "HA", "label": "S2" },
@@ -239,8 +241,8 @@ Every field is optional on load — **tolerant decode** means a config written b
 | `speedBoost.multiplier` | Speed multiplier while boost modifier held | number (default `5`) |
 | `grid.combo.modifier` | Modifier for the grid-layer trigger | modifier name (default `command`) |
 | `grid.combo.key` | Key that turns the grid layer on | key name (default `'`) |
-| `grid.targetCellPx` | Grid layer cell **width**; cols = round(displayWidth / this) | int 60..400 (default `150`) |
-| `grid.targetCellHeightPx` | Optional cell **height**; rows = round(displayHeight / this). Omit for square cells | int 30..400 (default: same as width) |
+| `grid.targetCellPx` | Grid layer cell **width**; cols = round(displayWidth / this) | int 60..400 (default `60`) |
+| `grid.targetCellHeightPx` | Optional cell **height**; rows = round(displayHeight / this). Omit for square cells | int 30..400 (default `44`; omit/null = same as width) |
 | `grid.customLabels` | Pinned labels: each `{ cell, label }` renames a cell (by its default 2-letter `cell` code) to `label` (green pill, typed to warp). `[]` disables all | array (default: 5 built-ins) |
 | `savedSpots.warpModifier` | Modifier held with a slot key to warp to a recorded spot | modifier name (default `command`) |
 | `savedSpots.recordModifier` | Modifier for the arm-record combo | modifier name / combo (default `command+shift`) |
