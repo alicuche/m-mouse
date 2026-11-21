@@ -141,8 +141,10 @@ final class MouseController: @unchecked Sendable {
 
     func rightClick() {
         let pos = realCursorPosition()
-        postMouseEvent(.rightMouseDown, at: pos, button: .right, clickCount: 1)
-        postMouseEvent(.rightMouseUp,   at: pos, button: .right, clickCount: 1)
+        // Explicit empty flags: triggered by Shift+Enter, and the held Shift
+        // would otherwise leak in (apps would see Shift+right-click).
+        postMouseEvent(.rightMouseDown, at: pos, button: .right, clickCount: 1, flags: [])
+        postMouseEvent(.rightMouseUp,   at: pos, button: .right, clickCount: 1, flags: [])
     }
 
     // MARK: - Drag (vim-style visual mode)

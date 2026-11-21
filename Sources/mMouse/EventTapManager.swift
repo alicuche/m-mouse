@@ -532,6 +532,7 @@ final class EventTapManager: @unchecked Sendable {
             stopBadgeFollowTimer()
             MainActor.assumeIsolated { badge.hide() }
         }
+        escFirstTapAt = nil
         enterClickCount = 0
         enterClickResetWork?.cancel()
         enterClickResetWork = nil
@@ -1026,6 +1027,10 @@ final class EventTapManager: @unchecked Sendable {
         // Opt+Enter, …) goes to the OS / foreground app untouched. The keyUp
         // of a passed-through keyDown is passed through too, so apps never
         // see a dangling keyDown.
+        // Esc double-tap must be CONSECUTIVE: any other keyDown — including
+        // ones passed through below — breaks the pending first tap.
+        if type == .keyDown && keyCode != escapeKeyCode { escFirstTapAt = nil }
+
         let mods = flags.intersection(relevantModifierMask)
         let isOwnKey = movementKeyCodes.contains(keyCode) || keyCode == escapeKeyCode
             || keyCode == enterKeyCode || keyCode == keypadEnterKeyCode
@@ -1051,25 +1056,35 @@ final class EventTapManager: @unchecked Sendable {
             }
         }
 
-        // Esc is the ONE full exit: it tears down BOTH layers at once (grid +
-        // red mode) regardless of how many are on. toggleActivation() hides the
-        // grid layer as part of deactivating. To drop just the grid and stay in
-        // red mode, use Enter (peels the grid only — see the Enter handler).
+        // Esc is LAYERED and exit needs a DOUBLE-TAP:
+        //   • grid on        → one Esc peels the grid (back to red mode). That
+        //                      press does NOT count toward the double-tap.
+        //   • red mode       → Esc, Esc within `escDoubleTapWindow` = full exit.
+        //                      A lone Esc does nothing (no accidental exits).
+        //   • spot armed     → Esc cancels just the arm.
+        // Any other key in between resets the count ("liên tiếp" = consecutive).
         if keyCode == escapeKeyCode {
             if type == .keyDown && !isRepeat {
+                let now = CACurrentMediaTime()
                 if spotArmed {
-                    // While arming a saved-spot record, Esc cancels just that —
-                    // it does NOT tear down the layers.
                     print("[mMouse] Esc — cancel saved-spot record")
                     disarmSpotRecording()
-                } else {
-                    print("[mMouse] Esc — deactivating (exit all layers)")
+                    escFirstTapAt = nil
+                } else if gridShown {
+                    print("[mMouse] Esc — closing grid layer (Esc×2 to exit)")
+                    hideGrid()
+                    escFirstTapAt = nil
+                } else if let first = escFirstTapAt, now - first <= escDoubleTapWindow {
+                    print("[mMouse] Esc×2 — deactivating")
+                    escFirstTapAt = nil
                     toggleActivation()
+                } else {
+                    print("[mMouse] Esc — press again to exit")
+                    escFirstTapAt = now
                 }
             }
             return nil
         }
-
         // --- Saved spots: warpModifier+key (default Cmd+<key>) either records
         // the live position (when armed) or warps to a recorded position. Works
         // in both red and grid mode. Movement keys are excluded so Cmd+arrow
@@ -1134,29 +1149,22 @@ final class EventTapManager: @unchecked Sendable {
 
         if keyCode == enterKeyCode || keyCode == keypadEnterKeyCode {
             if type == .keyDown && !isRepeat {
-                // During drag, Enter commits the drag (mouseUp). No regular
-                // click semantics — would corrupt the drag state.
-                if mouseController.isDragging {
-                    exitDragMode()
-                } else if flags.intersection(relevantModifierMask) == .maskCommand {
-                    // Cmd+Enter: left click (x2 within the window = double
-                    // click) while keeping every layer on.
-                    handleEnterClick()
-                } else if gridShown {
-                    // Layer mode: Enter peels the grid layer off (stays in red
-                    // mode), no click — same as the first Esc peel.
+                if gridShown {
+                    // Grid layer on: Enter (any modifier) ONLY hides the grid
+                    // and drops back to red-dot mode — no click, no drag commit
+                    // (a Shift-held drag still ends on Shift release).
                     print("[mMouse] Enter — closing grid layer")
                     hideGrid()
-                } else if flags.contains(.maskShift) {
+                } else if mouseController.isDragging {
+                    // Red mode drag: Enter commits it (mouseUp).
+                    exitDragMode()
+                } else if mods == .maskCommand {
+                    // Cmd+Enter: left click (x2 = double click), stays active.
+                    handleEnterClick()
+                } else if mods == .maskShift {
                     handleRightClick()
-                } else {
-                    // Red mode (no layer): Enter left-clicks AND exits red mode
-                    // immediately.
-                    print("[mMouse] Enter — click + deactivate")
-                    mouseController.click(count: 1)
-                    fireActionIndicators()
-                    toggleActivation()
                 }
+                // (bare Enter in red mode never gets here — passed through)
             }
             return nil
         }
@@ -1201,6 +1209,10 @@ final class EventTapManager: @unchecked Sendable {
         return Unmanaged.passUnretained(event)
     }
 
+    /// Time of the first Esc of a pending double-tap exit (red mode only).
+    private var escFirstTapAt: TimeInterval?
+    private let escDoubleTapWindow: TimeInterval = 0.5
+
     /// Keys whose keyDown we passed through — their keyUp passes through too.
     private var passedThroughKeys: Set<CGKeyCode> = []
 
@@ -1208,13 +1220,17 @@ final class EventTapManager: @unchecked Sendable {
     /// left to the OS / foreground app.
     private func claimsKey(_ keyCode: CGKeyCode, mods: CGEventFlags) -> Bool {
         if keyCode == escapeKeyCode {
-            // Bare Esc = exit. While dragging Shift is held, so Shift+Esc must
-            // still exit (toggleActivation cleans up the drag).
-            return mods.isEmpty || mouseController.isDragging
+            // Esc has PRIORITY in active mode: claimed with any modifier, so
+            // the double-tap exit always works (the OS/app never sees it).
+            return true
         }
         if keyCode == enterKeyCode || keyCode == keypadEnterKeyCode {
+            // Grid layer on: Enter (any modifier) ONLY peels the grid.
+            if gridShown { return true }
             if mouseController.isDragging { return true }   // Enter commits drag
-            return mods.isEmpty || mods == .maskShift || mods == .maskCommand
+            // Red mode: Cmd+Enter = left click, Shift+Enter = right click. Bare
+            // Enter passes through so it submits forms / newlines in the app.
+            return mods == .maskCommand || mods == .maskShift
         }
         // Arrows: move / drag (Shift) / scroll (Cmd) / zoom (Cmd+Opt) / boost.
         var allowed: [CGEventFlags] = [[], .maskShift, .maskCommand,

@@ -4,7 +4,7 @@ Keyboard-driven cursor control for macOS. Goal: drop the physical mouse as much 
 
 <img width="1512" height="982" alt="image" src="https://github.com/user-attachments/assets/2faa6d9a-ac08-41b2-aa56-5438343e1d0b" />
 
-A menu-bar app: press a combo to enter **red mode**, then drive the real system cursor with the keyboard — arrows to move, `Enter` to click, `Cmd+arrow` to scroll, `Shift+arrow` to drag-select. On top of that, a **grid layer** paints a labelled matrix over the screen so you can warp the cursor anywhere in two keystrokes, with optional **custom green labels** for the spots you hit most. And **saved spots** let you record any cursor position and warp straight back to it with a single `Cmd + key`.
+A menu-bar app: press a combo to enter **red mode**, then drive the real system cursor with the keyboard — arrows to move, `Cmd+Enter` to click, `Cmd+arrow` to scroll, `Shift+arrow` to drag-select. On top of that, a **grid layer** paints a labelled matrix over the screen so you can warp the cursor anywhere in two keystrokes, with optional **custom green labels** for the spots you hit most. And **saved spots** let you record any cursor position and warp straight back to it with a single `Cmd + key`.
 
 ## Quick start
 
@@ -18,21 +18,20 @@ Grant Accessibility when prompted (see [Install](#install-end-users)), then:
 
 1. Press **`Cmd + ;`** → red follow-dot + a labelled grid appear.
 2. Type a cell's two letters (e.g. `BC`) → cursor warps there. Type a **green** label (e.g. `S1`) for a pinned cell.
-3. Arrows fine-tune (step cell-by-cell), **`Enter`** drops the grid (stay in red mode), **`Esc`** exits everything.
+3. Arrows fine-tune (step cell-by-cell), **`Enter`** or **`Esc`** drops the grid (back to red mode); **`Esc` `Esc`** (double-tap) exits everything.
 
 ## Features
 
-- **Activation**: `Cmd + ;` (single press by default; configurable) turns on **red mode + the grid layer together** — the red follow-badge AND a translucent labelled matrix appear at once. You can add more activation combos via config (e.g. both `Cmd + E` and `Cmd + Q`). Re-pressing the combo while active never exits — it just re-shows both layers (so it re-opens the grid if you'd peeled it back to red-only). `Esc` is the only full exit.
+- **Activation**: `Cmd + ;` (single press by default; configurable) turns on **red mode + the grid layer together** — the red follow-badge AND a translucent labelled matrix appear at once. You can add more activation combos via config (e.g. both `Cmd + E` and `Cmd + Q`). Re-pressing the combo while active never exits — it just re-shows both layers (so it re-opens the grid if you'd peeled it back to red-only). A double-tap `Esc` is the only full exit.
 - **Grid layer**: while on, type a 2-letter cell code (row letter + column letter, e.g. `BC`) to warp the cursor straight to that cell — coarse-jump anywhere on screen, then fine-tune with arrows (which step cell-by-cell). `Shift` + the second letter also clicks. `Cmd + '` re-opens the layer if you peeled it off.
 - **Custom cell labels**: pin easy-to-remember labels (e.g. `S1`, `11`) onto specific cells. They render on a **fluorescent-green pill** so they stand out, and you type the label to warp there. Fully configurable; ships with a handful of defaults.
 - **Saved spots**: record any cursor position and warp straight back to it with `Cmd + <key>` (works in red mode *and* the grid layer). Arm recording with `Cmd + Shift + S`, then press `Cmd + <key>` to store the live position into that slot. In the grid layer each saved spot shows its warp combo (e.g. `⌘J`) on a small **blue badge** under the cell it falls in.
-- **Layered exit**: `Enter` peels just the grid layer off (stays in red mode); `Esc` fully exits both layers at once. In plain red mode (no layer), **`Enter` left-clicks and exits in one go**, and `Esc` exits.
+- **Layered exit**: `Enter` or a single `Esc` peels just the grid layer off (stays in red mode). In red mode a **double-tap `Esc`** is the only exit (a lone `Esc` does nothing, so you can't exit by accident).
 - **Direct cursor control**: arrow keys move the real system cursor — what you see is what gets clicked
 - **Click** *(hardcoded)*:
-  - `Enter` → left click
-  - `Enter × 2` (twice within 400ms) → double click
+  - `Cmd + Enter` → left click, stays in red mode; `× 2` within 400ms → double click
   - `Shift + Enter` → right click
-  - `Cmd + Enter` → left click, stays in the current mode (red or grid); `× 2` within 400ms → double click
+  - bare `Enter` → passes through to the app in red mode (submit / newline); with the layer on, `Enter` (any modifier) only peels the grid — no click
 - **Scroll** *(hardcoded)*: `Cmd + movement_key` → scroll wheel events at the cursor
 - **Drag / block selection** *(hardcoded)*: hold `Shift + arrow` → mouseDown, drag while held, release Shift → mouseUp
 - **mMouse-priority routing**: the keys mMouse uses are tapped at the **HID level** ahead of the OS, so they win even over system hotkeys (Spotlight, Cmd+Space, Cmd+Tab). Every *other* shortcut — typing, Cmd+C/V/Q/Tab, Cmd+Shift+4, anything — passes straight through to the foreground app as if mMouse weren't running.
@@ -70,16 +69,19 @@ First launch:
 | **Custom-label jump** (green cells) | with layer on: type the pinned label (e.g. `S1`, `11`); `Shift` on the last key also clicks |
 | **Step hover cell** (layer on) | arrow keys → jump one cell at a time; cursor snaps to the new cell's centre |
 | Grid: re-pick row | `Backspace` (clears the buffered first letter) |
-| Peel grid layer off (stay in red) | `Enter` (no click) |
-| **Red mode `Enter`** (no layer) | left-click **and** exit red mode immediately |
-| **Click and stay** (red or grid) | `Cmd + Enter` (`× 2` within 400ms = double click) |
-| Exit everything (both layers) | `Esc` |
+| Peel grid layer off (stay in red) | `Enter` (any modifier, no click) or `Esc` (once) |
+| `Cmd+Enter` | left-click at the cursor (stays active, x2 = double-click) |
+| `Shift+Enter` | right-click at the cursor |
+| `Enter` (red mode) | **passes through** to the app (submit / newline) |
+| **Click and stay** (red mode) | `Cmd + Enter` (`× 2` within 400ms = double click) |
+| Drop the grid layer | `Esc` |
+| Exit everything | `Esc` `Esc` (double-tap within 0.5s, from red mode) |
 | Up | `↑` |
 | Down | `↓` |
 | Left | `←` |
 | Right | `→` |
-| Left click | `Enter` (mode stays active) |
-| Double click | `Enter × 2` (within 400ms) |
+| Left click | `Cmd + Enter` (mode stays active) |
+| Double click | `Cmd + Enter × 2` (within 400ms) |
 | Right click | `Shift + Enter` |
 | Scroll up | `Cmd + ↑` (hold for continuous scroll) |
 | Scroll down | `Cmd + ↓` |
@@ -90,7 +92,7 @@ First launch:
 | Speed boost (5× by default) | hold `Option` while moving (configurable) |
 | **Warp to saved spot** | `Cmd + <key>` (works in red mode and the grid layer) |
 | **Record a saved spot** | `Cmd + Shift + S` to arm, then `Cmd + <key>` to store the current cursor position |
-| **Panic exit** | `Esc` (auto-commits drag if in progress; cancels an armed spot-record) |
+| **Exit** | `Esc` `Esc` double-tap (auto-commits drag if in progress; a single `Esc` cancels an armed spot-record) |
 
 Menu bar — an `mM` monogram icon:
 - **default tint** — inactive (typing works normally)
@@ -99,9 +101,9 @@ Menu bar — an `mM` monogram icon:
 ### How it works in active mode
 
 - The **real system cursor** is what moves. Arrow keys warp it; the cursor you see is the cursor that will click. No floating overlay, no aim icon.
-- `Enter` posts a left click at the cursor's current position.
+- `Cmd + Enter` posts a left click at the cursor's current position (bare `Enter` goes to the app).
 - `Shift + Enter` opens a context menu where the cursor is.
-- After clicking, mMouse stays active — keep moving / clicking / scrolling. Press `Esc` to exit.
+- After clicking, mMouse stays active — keep moving / clicking / scrolling. Double-tap `Esc` to exit.
 
 ### Drag (block selection)
 
@@ -109,7 +111,7 @@ Hold `Shift` then press an arrow → `mouseDown` at the current cursor. Keep `Sh
 
 - Releasing an arrow without releasing `Shift` keeps the mouse held down (useful when you want to pause mid-drag, reposition, then continue).
 - `Enter` also commits the drag (alternative to releasing Shift).
-- `Esc` commits any in-progress drag, then deactivates.
+- Double-tap `Esc` commits any in-progress drag, then deactivates.
 
 Perfect for selecting a screenshot region after `Cmd+Shift+4`, lasso-selecting files in Finder, marquee-selecting in design tools, or any "mouse-down + move + release" gesture.
 
@@ -151,7 +153,7 @@ Configure them in `grid.customLabels` (see [Config](#config)). Each entry maps a
 - Out-of-range entries (a cell that doesn't exist on the current display's grid) are silently skipped — the count of labels actually applied is printed when the layer opens.
 - This is **just a setting**. The five labels above are the built-in defaults (also written into the config on first launch); override the list to whatever you want, or set `"customLabels": []` to turn them all off.
 
-**Exit is layered.** With the layer on, `Enter` peels it off (no click) and drops you back to plain red mode — badge + arrows, typing works again; `Esc` instead exits both layers at once. Then in plain red mode: `Esc` exits, or **`Enter` left-clicks and exits in one motion** (handy: jump near a button with the layer, peel off, then `Enter` to click it and you're done). Re-pressing the activation combo never exits — it just re-shows both layers. While the layer is on, bare letters drive the grid so you can't type them into the foreground app — the moment you peel back to red mode, plain letters pass through again.
+**Exit is layered.** With the layer on, `Enter` (any modifier — no click) or a single `Esc` peels it off and drops you back to plain red mode — badge + arrows, typing works again. Then a double-tap `Esc` exits. In red mode bare `Enter` passes through to the app (so forms still submit); click with `Cmd+Enter`, right-click with `Shift+Enter` — neither exits. Re-pressing the activation combo never exits — it just re-shows both layers. While the layer is on, bare letters drive the grid so you can't type them into the foreground app — the moment you peel back to red mode, plain letters pass through again.
 
 ### Saved spots (record a position, warp back to it)
 
@@ -166,9 +168,9 @@ All four pieces — warp modifier, record combo, arm window, and the stored spot
 
 ### Key routing model
 
-In **red mode** mMouse consumes only the keys it uses (arrows, Enter, Esc, the activation/grid combos); everything else — typing, Cmd+C, Cmd+S, Cmd+Tab, Cmd+Shift+4 — passes through. With the **grid layer** on, it additionally claims **bare/Shift letters** (grid jump), plus **digits that belong to a custom label** (e.g. `1` when an `11` label exists); `Cmd`/`Ctrl`/`Option` shortcuts and unrelated digits still pass through, but plain letters don't (use `Esc` to drop back to red mode and type).
+In **red mode** mMouse consumes only the keys it uses (arrows, Enter, Esc, the activation/grid combos); everything else — typing, Cmd+C, Cmd+S, Cmd+Tab, Cmd+Shift+4 — passes through. With the **grid layer** on, it additionally claims **bare/Shift letters** (grid jump), plus **digits that belong to a custom label** (e.g. `1` when an `11` label exists); `Cmd`/`Ctrl`/`Option` shortcuts and unrelated digits still pass through, but plain letters don't (press `Esc` once to drop back to red mode and type).
 
-If a third-party shortcut collides with an mMouse key (e.g. an app uses bare arrows or bare Enter), mMouse wins — that's the priority guarantee. Deactivate with `Esc` when you need the raw key in the foreground app.
+If a third-party shortcut collides with an mMouse key (e.g. an app uses bare arrows or bare Enter), mMouse wins — that's the priority guarantee. Deactivate with a double-tap `Esc` when you need the raw key in the foreground app.
 
 ## Config
 
@@ -245,7 +247,7 @@ Every field is optional on load — **tolerant decode** means a config written b
 | `savedSpots.armWindowMs` | How long recording stays armed waiting for the slot key | int ≥ 1000 (default `8000`) |
 | `savedSpots.spots` | Recorded targets — each `{ key, x, y }` (CG coords). Written by the in-app recorder; edit or clear by hand | array (default `[]`) |
 
-> **Hardcoded** (not configurable): `Enter` / `Shift+Enter` / `Cmd+Enter` (click), `Esc` (panic exit), `Shift + movement` (hold-to-drag), `Cmd + movement` (scroll). The movement keys must NOT collide with `Enter` — mMouse warns and disarms the colliding direction if you try. `speedBoost.modifier` should not include Cmd or be Shift exactly — those would silently lose to scroll / drag and never fire.
+> **Hardcoded** (not configurable): `Cmd+Enter` (left click) / `Shift+Enter` (right click) / `Enter` with the grid on, any modifier (peel grid only; bare `Enter` passes through in red mode), `Esc` (single: drop grid / cancel spot-arm; double-tap: exit), `Shift + movement` (hold-to-drag), `Cmd + movement` (scroll). The movement keys must NOT collide with `Enter` — mMouse warns and disarms the colliding direction if you try. `speedBoost.modifier` should not include Cmd or be Shift exactly — those would silently lose to scroll / drag and never fire.
 
 ### Speed cheat sheet
 
@@ -296,8 +298,8 @@ Per-tick = `0.5 × speed²` px at 60 Hz baseline, modulated by an acceleration c
 ## Trade-offs
 
 - For multi-tap combos (`repeatCount > 1`), the first press is **always suppressed** (we don't know yet if it's the start of a sequence). If the follow-ups don't arrive within `windowMs`, the press is dropped. Single-press combos (`repeatCount: 1`, the default) don't have this trade-off.
-- While active, only mMouse's own keys are intercepted: arrows (any modifier — movement / drag / scroll / boost), Enter / Shift+Enter (click / right-click), Esc (deactivate), and the activation combo. Every other key passes through to the foreground app unchanged. No whitelist to maintain.
-- Click does not auto-exit the mode — press `Esc` to leave (re-pressing the activation combo just re-shows both layers, it never exits).
+- While active, only mMouse's own keys are intercepted: arrows (any modifier — movement / drag / scroll / boost), Cmd+Enter / Shift+Enter in red mode (click / right-click), any Enter while the grid is on (peel only), Esc (single: drop grid; double-tap: deactivate), and the activation combo. Every other key passes through to the foreground app unchanged. No whitelist to maintain.
+- Click does not auto-exit the mode — double-tap `Esc` to leave (re-pressing the activation combo just re-shows both layers, it never exits).
 - Because the real cursor moves while you aim, hover effects (tooltips, link previews, button highlights) will fire just like with a physical mouse. This is intentional: you see exactly what the click will hit.
 - The activation, movement, and click handlers **cannot share keys**. mMouse warns and disarms the offender at config-load time.
 
@@ -336,7 +338,7 @@ While typing a sudo password in Terminal, macOS auto-disables all event taps. mM
 mMouse listens for `NSWorkspace.didWakeNotification` and recreates the tap automatically. If it still doesn't work → menu bar → **Quit** → reopen.
 
 ### Stuck in active mode (activated but can't type)
-Press `Esc` to deactivate (the activation combo no longer exits — it re-shows both layers). Or click the menu bar `🟢 mM` → **Deactivate** — the physical mouse still works for this even while active.
+Double-tap `Esc` to deactivate (the activation combo no longer exits — it re-shows both layers). Or click the menu bar `🟢 mM` → **Deactivate** — the physical mouse still works for this even while active.
 
 ### After granting permission the alert keeps appearing
 The app self-relaunches when it detects the grant. If it loops:

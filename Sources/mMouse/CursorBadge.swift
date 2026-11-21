@@ -2,8 +2,9 @@ import AppKit
 import CoreGraphics
 import Foundation
 
-/// Small floating dot anchored to the bottom-right of the system cursor.
-/// Acts as a passive status indicator while mMouse is active:
+/// Large red arrow pointer (white outline) drawn exactly over the system
+/// cursor while mMouse is active — the real cursor is hidden meanwhile, so this
+/// IS the pointer you see. Its tip sits on the click hotspot.
 /// - Red when idle (you are in active mode)
 /// - Brief green flash when a click / right-click / drag start / drag end fires
 ///
@@ -17,16 +18,13 @@ final class CursorBadge {
     private let panel: NSPanel
     private let imageView: NSImageView
 
-    /// Diameter of the visible dot. Kept small so it never interferes with
-    /// what's under the cursor.
-    private let size: CGFloat = 10
-
-    /// Pixel offset from the cursor hotspot to the badge's panel-origin (top-
-    /// left of the badge in CG coords). Tuned to sit snugly next to the
-    /// cursor's tip — slightly right of and slightly below the hotspot, but
-    /// close enough that the eye reads "cursor + badge" as one unit.
-    private let offsetX: CGFloat = 6
-    private let offsetY: CGFloat = 4
+    /// Arrow geometry: a classic pointer scaled by `arrowScale` (design units
+    /// are 12×20 ≈ the system arrow), plus `pad` around it for the white
+    /// stroke + shadow. The arrow tip is at (pad, pad) from the panel's top-left.
+    private static let arrowScale: CGFloat = 1.3
+    private static let pad: CGFloat = 4
+    private static let panelW: CGFloat = 12 * arrowScale + pad * 2
+    private static let panelH: CGFloat = 20 * arrowScale + pad * 2
 
     private let idleTint:   NSColor = .systemRed
     private let actionTint: NSColor = .systemGreen
@@ -43,7 +41,7 @@ final class CursorBadge {
     private var flashGen: UInt64 = 0
 
     init() {
-        let frame = NSRect(x: 0, y: 0, width: size, height: size)
+        let frame = NSRect(x: 0, y: 0, width: Self.panelW, height: Self.panelH)
         let panel = NSPanel(
             contentRect: frame,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -67,7 +65,7 @@ final class CursorBadge {
 
         let imageView = NSImageView(frame: frame)
         imageView.imageScaling = .scaleProportionallyUpOrDown
-        imageView.image = CursorBadge.dotImage(diameter: size, fill: idleTint)
+        imageView.image = CursorBadge.arrowImage(fill: idleTint)
         container.addSubview(imageView)
         panel.contentView = container
 
@@ -81,21 +79,24 @@ final class CursorBadge {
         setIdleColor()
         move(to: cursor)
         panel.orderFrontRegardless()
+        SystemCursor.hide()
     }
 
     func hide() {
         flashGen &+= 1
         panel.orderOut(nil)
+        SystemCursor.show()
     }
 
     /// Update badge position to follow the cursor. `cursor` is in CG coords
     /// (top-left origin, Y down) — same coord space MouseController uses.
     func move(to cursor: CGPoint) {
+        // Tip of the arrow (at pad,pad inside the panel) lands on the hotspot.
         let nsOrigin = Self.panelOriginForCursor(
             cursor,
-            panelSize: size,
-            offsetX: offsetX,
-            offsetY: offsetY
+            panelHeight: Self.panelH,
+            offsetX: -Self.pad,
+            offsetY: -Self.pad
         )
         panel.setFrameOrigin(nsOrigin)
     }
@@ -104,7 +105,7 @@ final class CursorBadge {
     func flashAction() {
         flashGen &+= 1
         let gen = flashGen
-        imageView.image = CursorBadge.dotImage(diameter: size, fill: actionTint)
+        imageView.image = CursorBadge.arrowImage(fill: actionTint)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             guard let self = self, self.flashGen == gen else { return }
             self.setIdleColor()
@@ -121,38 +122,58 @@ final class CursorBadge {
 
     private func setIdleColor() {
         let tint = isRecording ? recordTint : idleTint
-        imageView.image = CursorBadge.dotImage(diameter: size, fill: tint)
+        imageView.image = CursorBadge.arrowImage(fill: tint)
     }
 
-    /// Pre-rendered solid dot. Cheap enough to redraw on tint change since
-    /// the image is tiny (10×10).
-    private static func dotImage(diameter: CGFloat, fill: NSColor) -> NSImage {
-        let img = NSImage(size: NSSize(width: diameter, height: diameter), flipped: false) { rect in
-            NSColor.clear.setFill()
-            rect.fill()
-            // 1px white stroke for visibility on any background.
-            let inset = rect.insetBy(dx: 1, dy: 1)
-            let circle = NSBezierPath(ovalIn: inset)
+    /// Arrow images are cached per tint (only 3 colours) — flashes swap them.
+    private static var arrowCache: [NSColor: NSImage] = [:]
+
+    /// Classic pointer: coloured fill, thick white outline, soft shadow so it
+    /// reads on both light and dark backgrounds.
+    private static func arrowImage(fill: NSColor) -> NSImage {
+        if let cached = arrowCache[fill] { return cached }
+        let img = NSImage(size: NSSize(width: panelW, height: panelH), flipped: true) { _ in
+            // Design-unit outline (top-left origin, Y down), tip at (0,0).
+            let pts: [(CGFloat, CGFloat)] = [
+                (0, 0), (0, 17), (4, 13.2), (6.8, 19.6), (9.6, 18.4),
+                (6.9, 12.2), (12, 12.2),
+            ]
+            let path = NSBezierPath()
+            for (i, p) in pts.enumerated() {
+                let pt = NSPoint(x: pad + p.0 * arrowScale, y: pad + p.1 * arrowScale)
+                if i == 0 { path.move(to: pt) } else { path.line(to: pt) }
+            }
+            path.close()
+            path.lineJoinStyle = .round
+            path.lineWidth = 2.0
+
+            NSGraphicsContext.saveGraphicsState()
+            let shadow = NSShadow()
+            shadow.shadowColor = NSColor.black.withAlphaComponent(0.45)
+            shadow.shadowBlurRadius = 2.5
+            shadow.shadowOffset = NSSize(width: 0, height: -1)
+            shadow.set()
+            NSColor.white.setStroke()
+            path.stroke()
+            NSGraphicsContext.restoreGraphicsState()
+
             fill.setFill()
-            circle.fill()
-            NSColor.white.withAlphaComponent(0.9).setStroke()
-            circle.lineWidth = 0.8
-            circle.stroke()
+            path.fill()
             return true
         }
+        arrowCache[fill] = img
         return img
     }
 
     /// Convert CG cursor point (top-left origin) → NSPanel origin
-    /// (NS bottom-left of the panel's frame). The badge is anchored to the
-    /// cursor's bottom-right, so the panel sits at:
-    ///   x = cursor.x + offsetX  (panel left edge, slightly right of cursor)
-    ///   y_cg_top = cursor.y + offsetY  (panel top edge, slightly below cursor)
+    /// (NS bottom-left of the panel's frame). The panel's top-left sits at:
+    ///   x = cursor.x + offsetX, y_cg_top = cursor.y + offsetY
+    /// (the arrow passes -pad so its tip lands exactly on the hotspot),
     /// then flip Y to NS using the primary display's height (CG and NS share
     /// global coordinates; only the origin differs).
     private static func panelOriginForCursor(
         _ cursor: CGPoint,
-        panelSize: CGFloat,
+        panelHeight: CGFloat,
         offsetX: CGFloat,
         offsetY: CGFloat
     ) -> NSPoint {
@@ -161,7 +182,42 @@ final class CursorBadge {
         let cgTopLeftY = cursor.y + offsetY
         return NSPoint(
             x: cgTopLeftX,
-            y: primaryHeight - cgTopLeftY - panelSize
+            y: primaryHeight - cgTopLeftY - panelHeight
         )
     }
 }
+
+/// Hides the real system cursor while mMouse is active (the red arrow replaces
+/// it). A background app can't normally hide the cursor, so we set the
+/// (private, long-stable) "SetsCursorInBackground" connection property first.
+/// Hide/show calls are reference-counted by the window server, so we keep our
+/// own flag to issue exactly one hide per show. If mMouse dies, the window
+/// server restores the cursor automatically.
+@MainActor
+enum SystemCursor {
+    private static var hidden = false
+    private static var backgroundEnabled = false
+
+    static func hide() {
+        guard !hidden else { return }
+        if !backgroundEnabled {
+            let cid = _CGSDefaultConnection()
+            _ = CGSSetConnectionProperty(cid, cid, "SetsCursorInBackground" as CFString, kCFBooleanTrue)
+            backgroundEnabled = true
+        }
+        CGDisplayHideCursor(CGMainDisplayID())
+        hidden = true
+    }
+
+    static func show() {
+        guard hidden else { return }
+        CGDisplayShowCursor(CGMainDisplayID())
+        hidden = false
+    }
+}
+
+@_silgen_name("_CGSDefaultConnection")
+private func _CGSDefaultConnection() -> Int32
+
+@_silgen_name("CGSSetConnectionProperty")
+private func CGSSetConnectionProperty(_ cid: Int32, _ targetCID: Int32, _ key: CFString, _ value: CFTypeRef) -> Int32
